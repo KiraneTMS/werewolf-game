@@ -513,85 +513,60 @@
       console.log('[DEBUG] playerId:', currentPlayerId);
 
       try {
-        const result = await roomRef.transaction(current => {
-          console.log('[DEBUG] transaction current:', current ? JSON.stringify(current).slice(0, 300) : current);
+        // ========== SIMPLE WRITE (no transaction) for debugging ==========
+        let roleToGive = null;
+        let newRemaining = null;
 
-          if (!current) {
-            console.log('[DEBUG] abort: no current');
+        if (data.remaining) {
+          const candidates = [];
+          Object.entries(data.remaining).forEach(([role, count]) => {
+            if (count > 0) {
+              for (let i = 0; i < count; i++) candidates.push(role);
+            }
+          });
+          console.log('[DEBUG] candidates:', candidates);
+          if (candidates.length === 0) {
+            alert("No roles left!");
             return;
           }
-
-          // --- New format: remaining counts ---
-          if (current.remaining) {
-            const candidates = [];
-            Object.entries(current.remaining).forEach(([role, count]) => {
-              if (count > 0) {
-                for (let i = 0; i < count; i++) candidates.push(role);
-              }
-            });
-            console.log('[DEBUG] candidates from remaining:', candidates);
-
-            if (candidates.length === 0) {
-              console.log('[DEBUG] abort: no candidates');
-              return;
-            }
-
-            const role = candidates[Math.floor(Math.random() * candidates.length)];
-            current.remaining[role] = (current.remaining[role] || 0) - 1;
-            if (current.remaining[role] <= 0) delete current.remaining[role];
-
-            if (!current.players) current.players = {};
-            current.players[currentPlayerId] = { name, role, claimedAt: Date.now() };
-            console.log('[DEBUG] claiming role (new format):', role);
-            return current;
+          roleToGive = candidates[Math.floor(Math.random() * candidates.length)];
+          newRemaining = { ...data.remaining };
+          newRemaining[roleToGive] = (newRemaining[roleToGive] || 0) - 1;
+          if (newRemaining[roleToGive] <= 0) delete newRemaining[roleToGive];
+        } else if (data.available) {
+          let pool = Array.isArray(data.available) ? [...data.available] : Object.values(data.available);
+          if (pool.length === 0) {
+            alert("No roles left!");
+            return;
           }
-
-          // --- Old format: available array/object ---
-          if (current.available) {
-            let pool = Array.isArray(current.available)
-              ? current.available.slice()
-              : Object.values(current.available);
-
-            console.log('[DEBUG] pool from available:', pool);
-
-            if (pool.length === 0) {
-              console.log('[DEBUG] abort: empty pool');
-              return;
-            }
-
-            const idx = Math.floor(Math.random() * pool.length);
-            const role = pool[idx];
-            pool.splice(idx, 1);
-
-            // write back as array
-            current.available = pool;
-
-            if (!current.players) current.players = {};
-            current.players[currentPlayerId] = { name, role, claimedAt: Date.now() };
-            console.log('[DEBUG] claiming role (old format):', role);
-            return current;
-          }
-
-          console.log('[DEBUG] abort: no remaining and no available');
-          return;
-        });
-
-        console.log('[DEBUG] transaction result:', {
-          committed: result.committed,
-          snapshotExists: result.snapshot && result.snapshot.exists()
-        });
-
-        if (!result.committed) {
-          alert("TRANSACTION NOT COMMITTED\n\nPossible causes:\n- Firebase Security Rules blocking write\n- Room data structure unexpected\n\nOpen browser console (F12) for full debug logs.");
-          return;
+          const idx = Math.floor(Math.random() * pool.length);
+          roleToGive = pool[idx];
         }
+
+        console.log('[DEBUG] roleToGive:', roleToGive);
+
+        const updates = {};
+        updates['players/' + currentPlayerId] = {
+          name: name,
+          role: roleToGive,
+          claimedAt: Date.now()
+        };
+        if (newRemaining) {
+          updates['remaining'] = newRemaining;
+        }
+
+        console.log('[DEBUG] about to call update() with:', JSON.stringify(updates));
+
+        await roomRef.update(updates);
+
+        console.log('[DEBUG] update() SUCCESS');
 
         const after = await roomRef.child('players/' + currentPlayerId).once('value');
         const me = after.val();
-        console.log('[DEBUG] my player data:', me);
+        console.log('[DEBUG] my player data after write:', me);
 
         if (!me) {
-          alert("Transaction committed but player record missing.\nCheck Firebase console.");
+          alert("Write seemed to succeed but player not found afterwards.");
           return;
         }
 
@@ -617,7 +592,7 @@
 
       } catch (err) {
         console.error('[DEBUG] CLAIM ERROR:', err);
-        alert("CLAIM ERROR\n\n" + (err.code || '') + "\n" + (err.message || err) + "\n\nThis is usually Firebase Security Rules blocking the write.\nOpen browser console (F12) for details.");
+        alert("CLAIM ERROR\n\n" + (err.code || '') + "\n" + (err.message || err) + "\n\nCheck console for details.");
       }
     });
 
