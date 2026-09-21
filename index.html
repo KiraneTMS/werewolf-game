@@ -466,78 +466,132 @@
       }
 
       const roomRef = db.ref('rooms/' + code);
-      const snap = await roomRef.once('value');
+
+      console.log('[DEBUG] Joining room:', code, 'as', name);
+      console.log('[DEBUG] databaseURL:', firebaseConfig.databaseURL);
+
+      let snap;
+      try {
+        snap = await roomRef.once('value');
+      } catch (readErr) {
+        console.error('[DEBUG] READ FAILED:', readErr);
+        alert('READ FAILED (permission / rules?)\n\n' + (readErr.message || readErr.code || readErr));
+        return;
+      }
+
       if (!snap.exists()) {
         alert("Room not found. Check the code.");
         return;
       }
 
       const data = snap.val();
+      console.log('[DEBUG] Room data:', JSON.stringify(data, null, 2));
+
       if (data.status !== 'open') {
         alert("This room is closed.");
         return;
       }
 
-      // Check if any roles left (using remaining counts)
-      const rem = data.remaining || {};
-      const totalLeft = Object.values(rem).reduce((a, b) => a + (b || 0), 0);
+      // Support BOTH old (available array) and new (remaining counts) rooms
+      let totalLeft = 0;
+      if (data.remaining) {
+        totalLeft = Object.values(data.remaining).reduce((a, b) => a + (b || 0), 0);
+      } else if (data.available) {
+        // old format
+        const arr = Array.isArray(data.available) ? data.available : Object.values(data.available || {});
+        totalLeft = arr.length;
+      }
+
+      console.log('[DEBUG] totalLeft roles:', totalLeft);
+
       if (totalLeft <= 0) {
         alert("All roles have already been claimed!");
         return;
       }
 
-      // Claim a random role atomically using counts (reliable with Firebase)
       currentPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      console.log('[DEBUG] playerId:', currentPlayerId);
 
       try {
         const result = await roomRef.transaction(current => {
-          if (!current || !current.remaining) {
-            return; // abort
+          console.log('[DEBUG] transaction current:', current ? JSON.stringify(current).slice(0, 300) : current);
+
+          if (!current) {
+            console.log('[DEBUG] abort: no current');
+            return;
           }
 
-          // Build list of roles that still have count > 0
-          const candidates = [];
-          Object.entries(current.remaining).forEach(([role, count]) => {
-            if (count > 0) {
-              for (let i = 0; i < count; i++) candidates.push(role);
+          // --- New format: remaining counts ---
+          if (current.remaining) {
+            const candidates = [];
+            Object.entries(current.remaining).forEach(([role, count]) => {
+              if (count > 0) {
+                for (let i = 0; i < count; i++) candidates.push(role);
+              }
+            });
+            console.log('[DEBUG] candidates from remaining:', candidates);
+
+            if (candidates.length === 0) {
+              console.log('[DEBUG] abort: no candidates');
+              return;
             }
-          });
 
-          if (candidates.length === 0) {
-            return; // abort - no roles left
+            const role = candidates[Math.floor(Math.random() * candidates.length)];
+            current.remaining[role] = (current.remaining[role] || 0) - 1;
+            if (current.remaining[role] <= 0) delete current.remaining[role];
+
+            if (!current.players) current.players = {};
+            current.players[currentPlayerId] = { name, role, claimedAt: Date.now() };
+            console.log('[DEBUG] claiming role (new format):', role);
+            return current;
           }
 
-          // Pick random role
-          const role = candidates[Math.floor(Math.random() * candidates.length)];
+          // --- Old format: available array/object ---
+          if (current.available) {
+            let pool = Array.isArray(current.available)
+              ? current.available.slice()
+              : Object.values(current.available);
 
-          // Decrement remaining count
-          current.remaining[role] = (current.remaining[role] || 0) - 1;
-          if (current.remaining[role] <= 0) {
-            delete current.remaining[role];
+            console.log('[DEBUG] pool from available:', pool);
+
+            if (pool.length === 0) {
+              console.log('[DEBUG] abort: empty pool');
+              return;
+            }
+
+            const idx = Math.floor(Math.random() * pool.length);
+            const role = pool[idx];
+            pool.splice(idx, 1);
+
+            // write back as array
+            current.available = pool;
+
+            if (!current.players) current.players = {};
+            current.players[currentPlayerId] = { name, role, claimedAt: Date.now() };
+            console.log('[DEBUG] claiming role (old format):', role);
+            return current;
           }
 
-          // Add player
-          if (!current.players) current.players = {};
-          current.players[currentPlayerId] = {
-            name: name,
-            role: role,
-            claimedAt: Date.now()
-          };
-
-          return current;
+          console.log('[DEBUG] abort: no remaining and no available');
+          return;
         });
 
-        // Check if transaction committed
+        console.log('[DEBUG] transaction result:', {
+          committed: result.committed,
+          snapshotExists: result.snapshot && result.snapshot.exists()
+        });
+
         if (!result.committed) {
-          alert("Failed to claim a role. All roles may have been taken. Try again.");
+          alert("TRANSACTION NOT COMMITTED\n\nPossible causes:\n- Firebase Security Rules blocking write\n- Room data structure unexpected\n\nOpen browser console (F12) for full debug logs.");
           return;
         }
 
-        // Read back what we got
         const after = await roomRef.child('players/' + currentPlayerId).once('value');
         const me = after.val();
+        console.log('[DEBUG] my player data:', me);
+
         if (!me) {
-          alert("Failed to claim a role. Please try again.");
+          alert("Transaction committed but player record missing.\nCheck Firebase console.");
           return;
         }
 
@@ -552,7 +606,6 @@
         document.getElementById('p-team').textContent = def.team + " Team";
         document.getElementById('p-desc').textContent = def.desc;
 
-        // Color by team
         const reveal = document.querySelector('.role-reveal');
         if (def.team === 'Werewolf') {
           reveal.style.background = 'linear-gradient(135deg, #450a0a, #7f1d1d)';
@@ -563,8 +616,8 @@
         }
 
       } catch (err) {
-        console.error(err);
-        alert("Error claiming role: " + (err.message || "Please try again."));
+        console.error('[DEBUG] CLAIM ERROR:', err);
+        alert("CLAIM ERROR\n\n" + (err.code || '') + "\n" + (err.message || err) + "\n\nThis is usually Firebase Security Rules blocking the write.\nOpen browser console (F12) for details.");
       }
     });
 
