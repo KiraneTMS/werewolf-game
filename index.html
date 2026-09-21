@@ -239,6 +239,67 @@
     }
     .row { display: flex; gap: 8px; flex-wrap: wrap; }
     .row .btn { flex: 1; min-width: 120px; }
+
+    /* Dramatic vote reveal */
+    .reveal-stage {
+      margin: 24px 0;
+      padding: 28px 16px;
+      border-radius: 20px;
+      background: linear-gradient(160deg, #1a1030, #0f0f13 60%);
+      border: 1px solid #4c1d95;
+      text-align: center;
+      overflow: hidden;
+      position: relative;
+    }
+    .reveal-label {
+      font-size: 0.85rem;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      color: #a78bfa;
+      margin-bottom: 12px;
+    }
+    .reveal-window {
+      height: 72px;
+      overflow: hidden;
+      position: relative;
+      mask-image: linear-gradient(to bottom, transparent, black 18%, black 82%, transparent);
+      -webkit-mask-image: linear-gradient(to bottom, transparent, black 18%, black 82%, transparent);
+    }
+    .reveal-reel {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .reveal-reel.spinning {
+      animation: reel-spin 0.11s linear infinite;
+    }
+    .reveal-item {
+      height: 72px;
+      line-height: 72px;
+      font-size: 2rem;
+      font-weight: 800;
+      white-space: nowrap;
+      color: #e2e8f0;
+      transition: color 0.3s, text-shadow 0.3s, transform 0.3s;
+    }
+    .reveal-item.final {
+      color: #fde68a;
+      text-shadow: 0 0 28px rgba(253, 230, 138, 0.55);
+      transform: scale(1.06);
+    }
+    .reveal-item.role-wolf { color: #fca5a5 !important; text-shadow: 0 0 24px rgba(239,68,68,0.5); }
+    .reveal-item.role-village { color: #86efac !important; text-shadow: 0 0 24px rgba(34,197,94,0.4); }
+    @keyframes reel-spin {
+      from { transform: translateY(0); }
+      to { transform: translateY(-72px); }
+    }
+    .reveal-drum {
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-top: 12px;
+      letter-spacing: 2px;
+      min-height: 1.2em;
+    }
   </style>
 </head>
 <body>
@@ -334,9 +395,19 @@
     <div class="card wide" style="text-align:center;">
       <p style="color:var(--muted);font-size:0.85rem;">Public Screen • Room <span id="public-code"></span></p>
       <div class="status warning" id="public-phase" style="font-size:1.2rem;margin:16px 0;">Waiting...</div>
-      <div class="script-box" id="public-script" style="font-size:1.1rem;min-height:120px;text-align:left;">
+      <div class="script-box" id="public-script" style="font-size:1.1rem;min-height:80px;text-align:left;">
         The Narrator will share announcements here.
       </div>
+
+      <!-- Dramatic vote reveal -->
+      <div id="public-reveal" class="reveal-stage hidden">
+        <div class="reveal-label" id="reveal-label">ELIMINATED</div>
+        <div class="reveal-window">
+          <div class="reveal-reel" id="reveal-reel"></div>
+        </div>
+        <div class="reveal-drum" id="reveal-drum">Rolling...</div>
+      </div>
+
       <div class="section-title">Players</div>
       <div class="player-list" id="public-players" style="text-align:left;"></div>
       <div id="public-winner" class="hidden" style="margin-top:24px;padding:28px;border-radius:16px;">
@@ -403,18 +474,18 @@
   </div>
 
   <script>
-    // ========== FIREBASE CONFIG - REPLACE WITH YOURS ==========
-      const firebaseConfig = {
-        apiKey: "AIzaSyBCHul84cI33tjCUJWA3H6cnIU2MN_NlPs",
-        authDomain: "werewolf-game-474bd.firebaseapp.com",
-        databaseURL: "https://werewolf-game-474bd-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId: "werewolf-game-474bd",
-        storageBucket: "werewolf-game-474bd.firebasestorage.app",
-        messagingSenderId: "822274909096",
-        appId: "1:822274909096:web:ad465edc44c5e911ed739d",
-        measurementId: "G-NF1N0BJ80M"
-      };
-    // ===========================================================
+    // ========== FIREBASE CONFIG ==========
+    const firebaseConfig = {
+      apiKey: "AIzaSyBCHul84cI33tjCUJWA3H6cnIU2MN_NlPs",
+      authDomain: "werewolf-game-474bd.firebaseapp.com",
+      databaseURL: "https://werewolf-game-474bd-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "werewolf-game-474bd",
+      storageBucket: "werewolf-game-474bd.firebasestorage.app",
+      messagingSenderId: "822274909096",
+      appId: "1:822274909096:web:ad465edc44c5e911ed739d",
+      measurementId: "G-NF1N0BJ80M"
+    };
+    // =====================================
 
     const ROLE_DEFS = {
       villager:  { name: "Villager",  team: "Village",  desc: "No special power. Find the werewolves by discussion and voting.", hasNightAction: false },
@@ -759,19 +830,24 @@ When ready, the Narrator will open voting.`;
       const updates = {};
       const died = [];
       const protectedNames = [];
+      let wolfAttackName = null;
+      let wolfAttackSaved = false;
       let seerLine = '';
       let hunterLine = '';
+      let poisonName = null;
 
-      // Werewolf kill
+      // Werewolf attack
       if (actions.werewolfTarget) {
         const t = players[actions.werewolfTarget];
         const tName = t ? t.name : 'Someone';
-        const isProtected = actions.doctorTarget === actions.werewolfTarget || actions.witchHeal;
+        wolfAttackName = tName;
+        const isProtected = actions.doctorTarget === actions.werewolfTarget || !!actions.witchHeal;
         if (isProtected) {
+          wolfAttackSaved = true;
           protectedNames.push(tName);
         } else {
           updates[`alive/${actions.werewolfTarget}`] = false;
-          died.push({ id: actions.werewolfTarget, name: tName, role: t ? t.role : '?' });
+          died.push({ id: actions.werewolfTarget, name: tName, role: t ? t.role : '?', cause: 'werewolf' });
         }
       }
 
@@ -779,24 +855,25 @@ When ready, the Narrator will open voting.`;
       if (actions.witchPoison) {
         const t = players[actions.witchPoison];
         const tName = t ? t.name : 'Someone';
+        poisonName = tName;
         if (!died.find(d => d.id === actions.witchPoison)) {
           updates[`alive/${actions.witchPoison}`] = false;
-          died.push({ id: actions.witchPoison, name: tName, role: t ? t.role : '?' });
+          died.push({ id: actions.witchPoison, name: tName, role: t ? t.role : '?', cause: 'poison' });
         }
       }
 
-      // Hunter (if already set this night)
+      // Hunter
       if (actions.hunterTarget) {
         const t = players[actions.hunterTarget];
         const tName = t ? t.name : 'Someone';
         updates[`alive/${actions.hunterTarget}`] = false;
         if (!died.find(d => d.id === actions.hunterTarget)) {
-          died.push({ id: actions.hunterTarget, name: tName, role: t ? t.role : '?' });
+          died.push({ id: actions.hunterTarget, name: tName, role: t ? t.role : '?', cause: 'hunter' });
         }
         hunterLine = `Hunter shot ${tName}.`;
       }
 
-      // Seer private result (stored for seer + host)
+      // Seer (private for seer + host only)
       if (actions.seerTarget) {
         const t = players[actions.seerTarget];
         const isWolf = t && t.role === 'werewolf';
@@ -805,35 +882,66 @@ When ready, the Narrator will open voting.`;
           targetName: t ? t.name : '?',
           isWerewolf: !!isWolf
         };
-        seerLine = `Seer checked ${t ? t.name : '?'}: ${isWolf ? 'WEREWOLF' : 'NOT a Werewolf'}`;
+        seerLine = `Seer investigated ${t ? t.name : '?'}: ${isWolf ? 'WEREWOLF 🐺' : 'NOT a Werewolf'}`;
       }
 
-      // Doctor protect name for host notes
+      // Doctor protect (even if not the wolf target)
       if (actions.doctorTarget) {
         const t = players[actions.doctorTarget];
         if (t && !protectedNames.includes(t.name)) protectedNames.push(t.name);
       }
 
-      // Public announcement (safe for projector)
-      let publicText = `Night ${(roomData.nightNumber || 1)} is over.\n\n`;
-      if (died.length === 0) {
-        publicText += 'Nobody died last night.';
+      const nightNum = roomData.nightNumber || 1;
+
+      // ===== PUBLIC announcement (projector) =====
+      let publicText = `☀️ Morning of Day ${nightNum}\n\n`;
+
+      if (wolfAttackName) {
+        publicText += `🐺 Werewolves attacked: ${wolfAttackName}\n`;
+        if (wolfAttackSaved) {
+          publicText += `   → Protected! ${wolfAttackName} survived.\n`;
+        } else {
+          publicText += `   → ${wolfAttackName} was killed.\n`;
+        }
       } else {
-        publicText += 'The following player(s) died:\n';
+        publicText += `🐺 Werewolves did not choose a target.\n`;
+      }
+
+      if (poisonName) {
+        publicText += `🧙 Poisoned: ${poisonName}\n`;
+      }
+
+      if (hunterLine) {
+        publicText += `🏹 ${hunterLine}\n`;
+      }
+
+      if (protectedNames.length) {
+        publicText += `💊 Protected tonight: ${protectedNames.join(', ')}\n`;
+      }
+
+      publicText += `\n`;
+      if (died.length === 0) {
+        publicText += `✅ Nobody died last night.`;
+      } else {
+        publicText += `💀 Died last night:\n`;
         died.forEach(d => {
-          publicText += `• ${d.name}\n`;
+          publicText += `   • ${d.name}\n`;
         });
       }
-      if (hunterLine) publicText += '\n' + hunterLine;
 
-      // Host-only full notes
-      let hostNotes = publicText + '\n\n--- HOST ONLY ---\n';
-      if (protectedNames.length) hostNotes += `Protected: ${protectedNames.join(', ')}\n`;
-      if (seerLine) hostNotes += seerLine + '\n';
+      publicText += `\n\nDiscuss and find the werewolves.`;
+
+      // ===== HOST ONLY notes =====
+      let hostNotes = publicText + `\n\n──────── HOST ONLY ────────\n`;
+      if (seerLine) hostNotes += seerLine + `\n`;
       died.forEach(d => {
         const roleName = ROLE_DEFS[d.role] ? ROLE_DEFS[d.role].name : d.role;
-        hostNotes += `${d.name} was: ${roleName}\n`;
+        const cause = d.cause === 'werewolf' ? 'killed by werewolves'
+          : d.cause === 'poison' ? 'poisoned by witch'
+          : d.cause === 'hunter' ? 'shot by hunter' : 'died';
+        hostNotes += `${d.name} (${roleName}) — ${cause}\n`;
       });
+      if (!seerLine) hostNotes += `(No seer investigation this night)\n`;
 
       updates.phase = 'day';
       updates.publicAnnouncement = publicText;
@@ -841,7 +949,7 @@ When ready, the Narrator will open voting.`;
       updates.lastDied = died.map(d => d.id);
 
       await db.ref('rooms/' + currentRoom).update(updates);
-      alert("Night resolved.\n\nPublic announcement updated.\nHost notes (with roles) are in your script box.");
+      alert("Night resolved.\n\nPublic screen updated with attack / protect / deaths.\nSeer result is only on Seer's phone + your host notes.");
     });
 
     document.getElementById('btn-clear-votes').addEventListener('click', async () => {
