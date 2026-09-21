@@ -391,17 +391,12 @@
       const code = generateCode();
       const roomRef = db.ref('rooms/' + code);
 
-      // Build available pool as a list of role keys (for easy random pick)
-      const pool = [];
-      Object.entries(roles).forEach(([role, count]) => {
-        for (let i = 0; i < count; i++) pool.push(role);
-      });
-
+      // Use counts instead of array (much more reliable with Firebase RTDB)
       await roomRef.set({
         createdAt: Date.now(),
         config: roles,
         totalPlayers: total,
-        available: pool,          // array of remaining role keys
+        remaining: { ...roles },  // copy of counts that will be decremented
         players: {},              // playerId -> {name, role}
         status: 'open'
       });
@@ -427,12 +422,11 @@
     function updateHostUI(data) {
       const remainingEl = document.getElementById('host-remaining');
       remainingEl.innerHTML = '';
-      const counts = {};
-      (data.available || []).forEach(r => counts[r] = (counts[r] || 0) + 1);
+      const rem = data.remaining || {};
 
       Object.keys(ROLE_DEFS).forEach(key => {
-        if (data.config[key]) {
-          const left = counts[key] || 0;
+        if (data.config && data.config[key]) {
+          const left = rem[key] || 0;
           const badge = document.createElement('span');
           badge.className = 'badge' + (left === 0 ? ' empty' : '');
           badge.textContent = `${ROLE_DEFS[key].name}: ${left}/${data.config[key]}`;
@@ -483,24 +477,45 @@
         alert("This room is closed.");
         return;
       }
-      if (!data.available || data.available.length === 0) {
+
+      // Check if any roles left (using remaining counts)
+      const rem = data.remaining || {};
+      const totalLeft = Object.values(rem).reduce((a, b) => a + (b || 0), 0);
+      if (totalLeft <= 0) {
         alert("All roles have already been claimed!");
         return;
       }
 
-      // Claim a random role atomically
+      // Claim a random role atomically using counts (reliable with Firebase)
       currentPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
 
       try {
-        await roomRef.transaction(current => {
-          if (!current || !current.available || current.available.length === 0) {
+        const result = await roomRef.transaction(current => {
+          if (!current || !current.remaining) {
             return; // abort
           }
-          // Pick random index
-          const idx = Math.floor(Math.random() * current.available.length);
-          const role = current.available[idx];
-          // Remove from available
-          current.available.splice(idx, 1);
+
+          // Build list of roles that still have count > 0
+          const candidates = [];
+          Object.entries(current.remaining).forEach(([role, count]) => {
+            if (count > 0) {
+              for (let i = 0; i < count; i++) candidates.push(role);
+            }
+          });
+
+          if (candidates.length === 0) {
+            return; // abort - no roles left
+          }
+
+          // Pick random role
+          const role = candidates[Math.floor(Math.random() * candidates.length)];
+
+          // Decrement remaining count
+          current.remaining[role] = (current.remaining[role] || 0) - 1;
+          if (current.remaining[role] <= 0) {
+            delete current.remaining[role];
+          }
+
           // Add player
           if (!current.players) current.players = {};
           current.players[currentPlayerId] = {
@@ -508,14 +523,21 @@
             role: role,
             claimedAt: Date.now()
           };
+
           return current;
         });
+
+        // Check if transaction committed
+        if (!result.committed) {
+          alert("Failed to claim a role. All roles may have been taken. Try again.");
+          return;
+        }
 
         // Read back what we got
         const after = await roomRef.child('players/' + currentPlayerId).once('value');
         const me = after.val();
         if (!me) {
-          alert("Failed to claim a role. Someone else may have taken the last ones. Try again.");
+          alert("Failed to claim a role. Please try again.");
           return;
         }
 
@@ -542,7 +564,7 @@
 
       } catch (err) {
         console.error(err);
-        alert("Error claiming role. Please try again.");
+        alert("Error claiming role: " + (err.message || "Please try again."));
       }
     });
 
