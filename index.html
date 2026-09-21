@@ -300,10 +300,10 @@
         <button class="btn btn-sm btn-success" id="btn-resolve-night">Resolve Night</button>
       </div>
 
-      <div class="section-title">Narrator Script</div>
+      <div class="section-title">🔒 Host-only Script & Notes</div>
       <div class="script-box" id="script-box">Start the game to see scripts.</div>
 
-      <div class="section-title">Night Actions Received</div>
+      <div class="section-title">🔒 Night Actions (Host only)</div>
       <div id="host-actions">
         <p style="color:var(--muted);font-size:0.85rem;">Waiting for special roles to choose...</p>
       </div>
@@ -317,8 +317,30 @@
       </div>
 
       <div class="row" style="margin-top:12px;">
-        <button class="btn btn-sm btn-danger" id="btn-kill-selected">Mark Dead</button>
         <button class="btn btn-sm btn-secondary" id="btn-clear-votes">Clear Votes</button>
+        <button class="btn btn-sm btn-secondary" id="btn-open-public">📺 Open Public Screen</button>
+      </div>
+
+      <div class="section-title">Declare Winner</div>
+      <div class="row">
+        <button class="btn btn-sm btn-success" id="btn-win-village">Village Wins</button>
+        <button class="btn btn-sm btn-danger" id="btn-win-wolves">Werewolves Win</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== PUBLIC / PROJECTOR VIEW ========== -->
+  <div id="public-view" class="hidden" style="width:100%;max-width:640px;">
+    <div class="card wide" style="text-align:center;">
+      <p style="color:var(--muted);font-size:0.85rem;">Public Screen • Room <span id="public-code"></span></p>
+      <div class="status warning" id="public-phase" style="font-size:1.2rem;margin:16px 0;">Waiting...</div>
+      <div class="script-box" id="public-script" style="font-size:1.1rem;min-height:120px;text-align:left;">
+        The Narrator will share announcements here.
+      </div>
+      <div class="section-title">Players</div>
+      <div class="player-list" id="public-players" style="text-align:left;"></div>
+      <div id="public-winner" class="hidden" style="margin-top:24px;padding:28px;border-radius:16px;">
+        <div style="font-size:2rem;font-weight:800;" id="public-winner-text"></div>
       </div>
     </div>
   </div>
@@ -332,6 +354,14 @@
         <p style="margin-top:10px;font-size:0.85rem;opacity:0.75;" id="p-desc"></p>
       </div>
       <div class="status info" id="player-phase">Waiting for Narrator to start...</div>
+    </div>
+
+    <!-- Seer private result -->
+    <div id="seer-result" class="hidden">
+      <div class="action-card" style="border-color:#7c3aed;">
+        <h4>🔮 Investigation Result</h4>
+        <p id="seer-result-text" style="font-size:1.1rem;font-weight:700;margin-top:8px;"></p>
+      </div>
     </div>
 
     <!-- Action UI for special roles -->
@@ -356,11 +386,20 @@
       </div>
     </div>
 
+    <!-- Win / Lose screen -->
+    <div id="player-end" class="hidden">
+      <div class="role-reveal" id="end-box" style="padding:36px 16px;">
+        <div class="role-team" id="end-team"></div>
+        <div class="role-name" id="end-title" style="font-size:2.2rem;"></div>
+        <p id="end-msg" style="margin-top:12px;opacity:0.85;"></p>
+      </div>
+    </div>
+
     <button class="btn btn-secondary" id="btn-leave" style="margin-top:12px;">Leave</button>
   </div>
 
   <div class="footer">
-    Narrator sees all roles & actions. Players only see their own role and targets.
+    Host dashboard = secrets only. Public screen = safe for projector. Players see only their role & private results.
   </div>
 
   <script>
@@ -571,12 +610,22 @@ When ready, the Narrator will open voting.`;
         document.getElementById('phase-label').textContent =
           `Phase: ${data.phase || 'lobby'}  •  Night ${data.nightNumber || 0}`;
 
-        // Script
+        // Script (host sees private notes when available)
         const scriptEl = document.getElementById('script-box');
-        if (data.phase === 'night') scriptEl.textContent = NIGHT_SCRIPT;
-        else if (data.phase === 'day') scriptEl.textContent = DAY_SCRIPT;
-        else if (data.phase === 'voting') scriptEl.textContent = "Players are voting. Wait for votes, then announce the result.";
-        else scriptEl.textContent = "Choose a phase above.";
+        if (data.phase === 'ended') {
+          scriptEl.textContent = data.winner === 'village'
+            ? '🏆 VILLAGE WINS'
+            : (data.winner === 'werewolf' ? '🐺 WEREWOLVES WIN' : 'Game ended');
+        } else if (data.phase === 'night') {
+          scriptEl.textContent = NIGHT_SCRIPT;
+        } else if (data.phase === 'day') {
+          // Prefer last night host notes (includes who died + roles)
+          scriptEl.textContent = data.hostNightNotes || data.publicAnnouncement || DAY_SCRIPT;
+        } else if (data.phase === 'voting') {
+          scriptEl.textContent = "Players are voting. Wait for votes, then announce the result.";
+        } else {
+          scriptEl.textContent = "Choose a phase above.";
+        }
 
         // Actions received
         renderHostActions(data);
@@ -705,28 +754,123 @@ When ready, the Narrator will open voting.`;
       await db.ref('rooms/' + currentRoom).update({ phase: 'voting', votes: {} });
     });
     document.getElementById('btn-resolve-night').addEventListener('click', async () => {
-      // Simple resolve: if werewolf target not protected → die
       const actions = roomData.actions || {};
+      const players = roomData.players || {};
       const updates = {};
+      const died = [];
+      const protectedNames = [];
+      let seerLine = '';
+      let hunterLine = '';
+
+      // Werewolf kill
       if (actions.werewolfTarget) {
-        const protected = actions.doctorTarget === actions.werewolfTarget || actions.witchHeal;
-        if (!protected) {
+        const t = players[actions.werewolfTarget];
+        const tName = t ? t.name : 'Someone';
+        const isProtected = actions.doctorTarget === actions.werewolfTarget || actions.witchHeal;
+        if (isProtected) {
+          protectedNames.push(tName);
+        } else {
           updates[`alive/${actions.werewolfTarget}`] = false;
+          died.push({ id: actions.werewolfTarget, name: tName, role: t ? t.role : '?' });
         }
       }
+
+      // Witch poison
       if (actions.witchPoison) {
-        updates[`alive/${actions.witchPoison}`] = false;
+        const t = players[actions.witchPoison];
+        const tName = t ? t.name : 'Someone';
+        if (!died.find(d => d.id === actions.witchPoison)) {
+          updates[`alive/${actions.witchPoison}`] = false;
+          died.push({ id: actions.witchPoison, name: tName, role: t ? t.role : '?' });
+        }
       }
+
+      // Hunter (if already set this night)
       if (actions.hunterTarget) {
+        const t = players[actions.hunterTarget];
+        const tName = t ? t.name : 'Someone';
         updates[`alive/${actions.hunterTarget}`] = false;
+        if (!died.find(d => d.id === actions.hunterTarget)) {
+          died.push({ id: actions.hunterTarget, name: tName, role: t ? t.role : '?' });
+        }
+        hunterLine = `Hunter shot ${tName}.`;
       }
+
+      // Seer private result (stored for seer + host)
+      if (actions.seerTarget) {
+        const t = players[actions.seerTarget];
+        const isWolf = t && t.role === 'werewolf';
+        updates['seerResult'] = {
+          targetId: actions.seerTarget,
+          targetName: t ? t.name : '?',
+          isWerewolf: !!isWolf
+        };
+        seerLine = `Seer checked ${t ? t.name : '?'}: ${isWolf ? 'WEREWOLF' : 'NOT a Werewolf'}`;
+      }
+
+      // Doctor protect name for host notes
+      if (actions.doctorTarget) {
+        const t = players[actions.doctorTarget];
+        if (t && !protectedNames.includes(t.name)) protectedNames.push(t.name);
+      }
+
+      // Public announcement (safe for projector)
+      let publicText = `Night ${(roomData.nightNumber || 1)} is over.\n\n`;
+      if (died.length === 0) {
+        publicText += 'Nobody died last night.';
+      } else {
+        publicText += 'The following player(s) died:\n';
+        died.forEach(d => {
+          publicText += `• ${d.name}\n`;
+        });
+      }
+      if (hunterLine) publicText += '\n' + hunterLine;
+
+      // Host-only full notes
+      let hostNotes = publicText + '\n\n--- HOST ONLY ---\n';
+      if (protectedNames.length) hostNotes += `Protected: ${protectedNames.join(', ')}\n`;
+      if (seerLine) hostNotes += seerLine + '\n';
+      died.forEach(d => {
+        const roleName = ROLE_DEFS[d.role] ? ROLE_DEFS[d.role].name : d.role;
+        hostNotes += `${d.name} was: ${roleName}\n`;
+      });
+
       updates.phase = 'day';
+      updates.publicAnnouncement = publicText;
+      updates.hostNightNotes = hostNotes;
+      updates.lastDied = died.map(d => d.id);
+
       await db.ref('rooms/' + currentRoom).update(updates);
-      alert("Night resolved. Check who died on the Alive list.");
+      alert("Night resolved.\n\nPublic announcement updated.\nHost notes (with roles) are in your script box.");
     });
 
     document.getElementById('btn-clear-votes').addEventListener('click', async () => {
       await db.ref('rooms/' + currentRoom + '/votes').set({});
+    });
+
+    document.getElementById('btn-open-public').addEventListener('click', () => {
+      const url = location.href.split('?')[0] + '?public=' + currentRoom;
+      window.open(url, '_blank');
+    });
+
+    document.getElementById('btn-win-village').addEventListener('click', async () => {
+      if (!confirm("Declare Village as winner?")) return;
+      await db.ref('rooms/' + currentRoom).update({
+        status: 'ended',
+        phase: 'ended',
+        winner: 'village',
+        publicAnnouncement: '🏆 VILLAGE WINS!\n\nAll werewolves have been eliminated.'
+      });
+    });
+
+    document.getElementById('btn-win-wolves').addEventListener('click', async () => {
+      if (!confirm("Declare Werewolves as winner?")) return;
+      await db.ref('rooms/' + currentRoom).update({
+        status: 'ended',
+        phase: 'ended',
+        winner: 'werewolf',
+        publicAnnouncement: '🐺 WEREWOLVES WIN!\n\nThe wolves have taken over the village.'
+      });
     });
 
     document.getElementById('btn-copy').addEventListener('click', () => {
@@ -761,10 +905,8 @@ When ready, the Narrator will open voting.`;
       if (!snap.exists()) { alert("Room not found."); return; }
 
       const data = snap.val();
-      if (data.status === 'ended') { alert("Room has ended."); return; }
 
-      // If already playing and name matches existing player, rejoin
-      // Otherwise claim new role only in lobby
+      // Lobby = claim role; otherwise rejoin by name (including ended game for win screen)
       if (data.status === 'lobby') {
         const rem = data.remaining || {};
         const totalLeft = Object.values(rem).reduce((a, b) => a + (b || 0), 0);
@@ -841,25 +983,67 @@ When ready, the Narrator will open voting.`;
     function updatePlayerUI(data) {
       const phase = data.phase || 'lobby';
       const phaseEl = document.getElementById('player-phase');
-      phaseEl.textContent = `Phase: ${phase}` + (data.nightNumber ? `  •  Night ${data.nightNumber}` : '');
-      phaseEl.className = 'status ' + (phase === 'night' ? 'info' : phase === 'voting' ? 'warning' : 'success');
-
       const def = ROLE_DEFS[myRole] || {};
       const isAlive = (data.alive || {})[currentPlayerId] !== false;
 
-      // Night action UI
       const actionBox = document.getElementById('player-action');
       const voteBox = document.getElementById('player-vote');
+      const seerBox = document.getElementById('seer-result');
+      const endBox = document.getElementById('player-end');
+      const roleSection = document.getElementById('player-role-section');
+
       actionBox.classList.add('hidden');
       voteBox.classList.add('hidden');
+      seerBox.classList.add('hidden');
+      endBox.classList.add('hidden');
+      roleSection.classList.remove('hidden');
 
-      if (!isAlive) {
-        phaseEl.textContent += "  (You are dead)";
+      // ===== WIN / LOSE =====
+      if (data.status === 'ended' || phase === 'ended') {
+        roleSection.classList.add('hidden');
+        endBox.classList.remove('hidden');
+        const myTeam = def.team === 'Werewolf' ? 'werewolf' : 'village';
+        const won = data.winner === myTeam;
+        document.getElementById('end-team').textContent = def.team + ' Team';
+        document.getElementById('end-title').textContent = won ? 'YOU WIN!' : 'YOU LOSE';
+        document.getElementById('end-msg').textContent = data.winner === 'village'
+          ? 'The Village eliminated all werewolves.'
+          : 'The Werewolves overran the village.';
+        const box = document.getElementById('end-box');
+        if (won) {
+          box.style.background = 'linear-gradient(135deg, #14532d, #166534)';
+          box.style.borderColor = '#22c55e';
+        } else {
+          box.style.background = 'linear-gradient(135deg, #450a0a, #7f1d1d)';
+          box.style.borderColor = '#ef4444';
+        }
+        phaseEl.textContent = 'Game Over';
+        phaseEl.className = 'status ' + (won ? 'success' : 'error');
         return;
       }
 
+      phaseEl.textContent = `Phase: ${phase}` + (data.nightNumber ? `  •  Night ${data.nightNumber}` : '');
+      phaseEl.className = 'status ' + (phase === 'night' ? 'info' : phase === 'voting' ? 'warning' : 'success');
+
+      if (!isAlive) {
+        phaseEl.textContent += "  (You are dead)";
+      }
+
+      // ===== SEER PRIVATE RESULT =====
+      if (myRole === 'seer' && data.seerResult) {
+        seerBox.classList.remove('hidden');
+        const r = data.seerResult;
+        const text = r.isWerewolf
+          ? `${r.targetName} IS a Werewolf 🐺`
+          : `${r.targetName} is NOT a Werewolf`;
+        document.getElementById('seer-result-text').textContent = text;
+        document.getElementById('seer-result-text').style.color = r.isWerewolf ? '#fca5a5' : '#86efac';
+      }
+
+      if (!isAlive) return;
+
+      // ===== NIGHT ACTION =====
       if (phase === 'night' && def.hasNightAction) {
-        // Check if already submitted
         const actions = data.actions || {};
         let already = false;
         if (def.actionType === 'kill' && actions.werewolfTarget) already = true;
@@ -873,7 +1057,9 @@ When ready, the Narrator will open voting.`;
           document.getElementById('target-list').classList.add('hidden');
           actionBox.classList.remove('hidden');
           document.getElementById('action-title').textContent = "Choice already submitted";
-          document.getElementById('action-hint').textContent = "";
+          document.getElementById('action-hint').textContent = myRole === 'seer'
+            ? "Wait for night resolve to see the result."
+            : "";
         } else {
           document.getElementById('action-done').classList.add('hidden');
           document.getElementById('btn-submit-action').classList.remove('hidden');
@@ -891,7 +1077,7 @@ When ready, the Narrator will open voting.`;
             document.getElementById('action-hint').textContent = "Choose who to save from the werewolves.";
           } else if (def.actionType === 'witch') {
             document.getElementById('action-title').textContent = "🧙 Witch potions";
-            document.getElementById('action-hint').textContent = "You can heal the victim or poison someone (once each).";
+            document.getElementById('action-hint').textContent = "Select someone to poison (heal is applied if doctor already protected).";
           }
 
           renderTargets('target-list', data, (pid) => {
@@ -901,6 +1087,7 @@ When ready, the Narrator will open voting.`;
         }
       }
 
+      // ===== VOTING =====
       if (phase === 'voting') {
         const votes = data.votes || {};
         if (votes[currentPlayerId]) {
@@ -983,10 +1170,67 @@ When ready, the Narrator will open voting.`;
 
     document.getElementById('btn-leave').addEventListener('click', () => location.reload());
 
-    // Auto-join from URL
+    // Auto-join / Public screen from URL
     window.addEventListener('DOMContentLoaded', () => {
       const params = new URLSearchParams(location.search);
       const room = params.get('room');
+      const publicCode = params.get('public');
+
+      if (publicCode) {
+        // ===== PUBLIC / PROJECTOR MODE =====
+        if (!checkFirebase()) return;
+        document.getElementById('home').classList.add('hidden');
+        document.querySelector('.footer').classList.add('hidden');
+        document.querySelector('h1').classList.add('hidden');
+        document.querySelector('.subtitle').classList.add('hidden');
+        document.getElementById('public-view').classList.remove('hidden');
+        document.getElementById('public-code').textContent = publicCode.toUpperCase();
+
+        db.ref('rooms/' + publicCode.toUpperCase()).on('value', snap => {
+          const data = snap.val();
+          if (!data) {
+            document.getElementById('public-phase').textContent = 'Room not found';
+            return;
+          }
+          const phase = data.phase || 'lobby';
+          document.getElementById('public-phase').textContent =
+            phase === 'ended'
+              ? (data.winner === 'village' ? '🏆 VILLAGE WINS' : '🐺 WEREWOLVES WIN')
+              : `Phase: ${phase}` + (data.nightNumber ? `  •  Night ${data.nightNumber}` : '');
+
+          // Only public-safe text
+          const script = data.publicAnnouncement
+            || (phase === 'night' ? 'Night has fallen. Everyone close your eyes...' : '')
+            || (phase === 'day' ? 'Daytime. Discuss and find the werewolves.' : '')
+            || (phase === 'voting' ? 'Voting is open.' : 'Waiting for Narrator...');
+          document.getElementById('public-script').textContent = script;
+
+          // Players (names + alive only, NO roles)
+          const list = document.getElementById('public-players');
+          list.innerHTML = '';
+          Object.entries(data.players || {}).forEach(([pid, p]) => {
+            const alive = (data.alive || {})[pid] !== false;
+            const item = document.createElement('div');
+            item.className = 'player-item' + (alive ? '' : ' dead');
+            item.innerHTML = `<span class="name">${escapeHtml(p.name)}</span><span style="color:var(--muted);font-size:0.8rem;">${alive ? 'Alive' : 'Dead'}</span>`;
+            list.appendChild(item);
+          });
+
+          const winEl = document.getElementById('public-winner');
+          if (data.status === 'ended' && data.winner) {
+            winEl.classList.remove('hidden');
+            document.getElementById('public-winner-text').textContent =
+              data.winner === 'village' ? '🏆 VILLAGE WINS' : '🐺 WEREWOLVES WIN';
+            winEl.style.background = data.winner === 'village'
+              ? 'linear-gradient(135deg,#14532d,#166534)'
+              : 'linear-gradient(135deg,#450a0a,#7f1d1d)';
+          } else {
+            winEl.classList.add('hidden');
+          }
+        });
+        return;
+      }
+
       if (room) {
         document.querySelector('.tab[data-tab="join"]').click();
         document.getElementById('join-code').value = room.toUpperCase();
