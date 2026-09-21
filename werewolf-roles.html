@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Werewolf Role Assigner</title>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --card: #1a1a24;
+      --accent: #8b5cf6;
+      --accent-hover: #7c3aed;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --border: #2d2d3a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 20px;
+    }
+    h1 {
+      font-size: 1.8rem;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #a78bfa, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle { color: var(--muted); margin-bottom: 24px; font-size: 0.95rem; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 24px;
+      width: 100%;
+      max-width: 420px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    }
+    .hidden { display: none !important; }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      margin-top: 14px;
+    }
+    input[type="number"], input[type="text"] {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #12121a;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      transition: border 0.2s;
+    }
+    input:focus { border-color: var(--accent); }
+    .role-grid {
+      display: grid;
+      grid-template-columns: 1fr 80px;
+      gap: 8px 12px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .role-grid label { margin: 0; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 20px;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary {
+      background: var(--accent);
+      color: white;
+    }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary {
+      background: transparent;
+      border: 1px solid var(--border);
+      color: var(--text);
+    }
+    .btn-secondary:hover { border-color: var(--accent); }
+    .btn-danger {
+      background: var(--danger);
+      color: white;
+    }
+    .btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+    .tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 20px;
+    }
+    .tab {
+      flex: 1;
+      padding: 10px;
+      text-align: center;
+      border-radius: 10px;
+      cursor: pointer;
+      background: #12121a;
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .tab.active {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: white;
+    }
+    .room-code {
+      font-size: 2.2rem;
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-align: center;
+      margin: 16px 0;
+      color: #c4b5fd;
+    }
+    .status {
+      text-align: center;
+      padding: 12px;
+      border-radius: 10px;
+      margin: 12px 0;
+      font-size: 0.9rem;
+    }
+    .status.info { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+    .status.success { background: rgba(34,197,94,0.15); color: #86efac; }
+    .status.error { background: rgba(239,68,68,0.15); color: #fca5a5; }
+    .role-reveal {
+      text-align: center;
+      padding: 28px 16px;
+      border-radius: 16px;
+      margin: 16px 0;
+      background: linear-gradient(135deg, #2e1065, #4c1d95);
+      border: 1px solid #7c3aed;
+    }
+    .role-reveal .role-name {
+      font-size: 2rem;
+      font-weight: 800;
+      margin: 8px 0;
+    }
+    .role-reveal .role-team {
+      font-size: 0.9rem;
+      opacity: 0.8;
+    }
+    .player-list {
+      margin-top: 16px;
+      max-height: 200px;
+      overflow-y: auto;
+    }
+    .player-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 0.9rem;
+    }
+    .remaining {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-top: 12px;
+    }
+    .badge {
+      background: #12121a;
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 0.8rem;
+    }
+    .badge.empty { opacity: 0.4; text-decoration: line-through; }
+    .config-note {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 16px;
+      line-height: 1.4;
+    }
+    .footer {
+      margin-top: 32px;
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <h1>🐺 Werewolf Roles</h1>
+  <p class="subtitle">Create a room → set roles → players claim unique roles</p>
+
+  <!-- HOME -->
+  <div id="home" class="card">
+    <div class="tabs">
+      <div class="tab active" data-tab="create">Create Room</div>
+      <div class="tab" data-tab="join">Join Room</div>
+    </div>
+
+    <!-- CREATE -->
+    <div id="create-panel">
+      <p style="color:var(--muted);font-size:0.9rem;margin-bottom:8px;">
+        Set how many of each role. Total players = sum of all roles.
+      </p>
+      <div class="role-grid" id="role-inputs">
+        <!-- filled by JS -->
+      </div>
+      <button class="btn btn-primary" id="btn-create">Create Room</button>
+      <p class="config-note">
+        You need a free Firebase project. Open the file and replace the firebaseConfig object with your own (Realtime Database must be enabled).
+      </p>
+    </div>
+
+    <!-- JOIN -->
+    <div id="join-panel" class="hidden">
+      <label>Room Code</label>
+      <input type="text" id="join-code" placeholder="e.g. ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:3px;text-align:center;font-size:1.3rem;">
+      <label>Your Name</label>
+      <input type="text" id="join-name" placeholder="Enter your name" maxlength="20">
+      <button class="btn btn-primary" id="btn-join">Join & Claim Role</button>
+    </div>
+  </div>
+
+  <!-- HOST VIEW -->
+  <div id="host-view" class="card hidden">
+    <p style="text-align:center;color:var(--muted);font-size:0.85rem;">Room Code</p>
+    <div class="room-code" id="host-code">------</div>
+    <div class="status info" id="host-status">Waiting for players...</div>
+    <h3 style="margin-top:16px;font-size:1rem;">Remaining Roles</h3>
+    <div class="remaining" id="host-remaining"></div>
+    <h3 style="margin-top:20px;font-size:1rem;">Players who claimed</h3>
+    <div class="player-list" id="host-players"></div>
+    <button class="btn btn-secondary" id="btn-copy">Copy Invite Link</button>
+    <button class="btn btn-danger" id="btn-end" style="margin-top:10px;">End Room</button>
+  </div>
+
+  <!-- PLAYER VIEW -->
+  <div id="player-view" class="card hidden">
+    <div id="player-waiting">
+      <div class="status info">Claiming your role...</div>
+    </div>
+    <div id="player-role" class="hidden">
+      <div class="role-reveal">
+        <div class="role-team" id="p-team">Village</div>
+        <div class="role-name" id="p-role">Villager</div>
+        <p style="margin-top:12px;font-size:0.85rem;opacity:0.7;" id="p-desc"></p>
+      </div>
+      <p style="text-align:center;color:var(--muted);font-size:0.85rem;">
+        Keep this secret! Do not show your phone to others.
+      </p>
+    </div>
+    <button class="btn btn-secondary" id="btn-leave" style="margin-top:16px;">Leave</button>
+  </div>
+
+  <div class="footer">
+    Roles are stored temporarily in Firebase. Already claimed roles cannot be taken again in the same room.
+  </div>
+
+  <script>
+    // ========== FIREBASE CONFIG - REPLACE WITH YOURS ==========
+      const firebaseConfig = {
+        apiKey: "AIzaSyBCHul84cI33tjCUJWA3H6cnIU2MN_NlPs",
+        authDomain: "werewolf-game-474bd.firebaseapp.com",
+        databaseURL: "https://werewolf-game-474bd-default-rtdb.asia-southeast1.firebasedatabase.app",
+        projectId: "werewolf-game-474bd",
+        storageBucket: "werewolf-game-474bd.firebasestorage.app",
+        messagingSenderId: "822274909096",
+        appId: "1:822274909096:web:ad465edc44c5e911ed739d",
+        measurementId: "G-NF1N0BJ80M"
+      };
+    // ===========================================================
+
+    // Default roles with descriptions
+    const ROLE_DEFS = {
+      villager:  { name: "Villager",  team: "Village",  desc: "No special power. Find the werewolves by discussion and voting." },
+      werewolf:  { name: "Werewolf",  team: "Werewolf", desc: "Each night, choose one player to eliminate with your pack." },
+      seer:      { name: "Seer",      team: "Village",  desc: "Each night, learn if one player is a Werewolf or not." },
+      doctor:    { name: "Doctor",    team: "Village",  desc: "Each night, protect one player from the werewolf attack." },
+      hunter:    { name: "Hunter",    team: "Village",  desc: "When you die, you may immediately eliminate one other player." },
+      witch:     { name: "Witch",     team: "Village",  desc: "Has one heal potion and one poison potion (each once per game)." },
+      bodyguard: { name: "Bodyguard", team: "Village",  desc: "Protect one player. If they are attacked, you die instead." }
+    };
+
+    // Init Firebase (will fail gracefully if config not set)
+    let db = null;
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+    } catch (e) {
+      console.warn("Firebase not configured yet.", e);
+    }
+
+    // State
+    let currentRoom = null;
+    let currentPlayerId = null;
+    let isHost = false;
+
+    // DOM
+    const home = document.getElementById('home');
+    const hostView = document.getElementById('host-view');
+    const playerView = document.getElementById('player-view');
+    const createPanel = document.getElementById('create-panel');
+    const joinPanel = document.getElementById('join-panel');
+
+    // Build role inputs
+    const roleInputs = document.getElementById('role-inputs');
+    Object.keys(ROLE_DEFS).forEach(key => {
+      const def = ROLE_DEFS[key];
+      const label = document.createElement('label');
+      label.textContent = def.name;
+      const input = document.createElement('input');
+      input.type = 'number';
+      input.min = 0;
+      input.max = 20;
+      input.value = key === 'villager' ? 5 : (key === 'werewolf' ? 2 : (key === 'seer' ? 1 : 0));
+      input.id = `role-${key}`;
+      input.dataset.role = key;
+      roleInputs.appendChild(label);
+      roleInputs.appendChild(input);
+    });
+
+    // Tabs
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        if (tab.dataset.tab === 'create') {
+          createPanel.classList.remove('hidden');
+          joinPanel.classList.add('hidden');
+        } else {
+          createPanel.classList.add('hidden');
+          joinPanel.classList.remove('hidden');
+        }
+      });
+    });
+
+    function generateCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+      return code;
+    }
+
+    function checkFirebase() {
+      if (!db || firebaseConfig.apiKey === "YOUR_API_KEY") {
+        alert("Please configure Firebase first!\n\n1. Go to https://console.firebase.google.com\n2. Create a project\n3. Enable Realtime Database (start in test mode for simplicity)\n4. Copy your config into the firebaseConfig object in this HTML file.");
+        return false;
+      }
+      return true;
+    }
+
+    // CREATE ROOM
+    document.getElementById('btn-create').addEventListener('click', async () => {
+      if (!checkFirebase()) return;
+
+      const roles = {};
+      let total = 0;
+      document.querySelectorAll('#role-inputs input').forEach(inp => {
+        const count = parseInt(inp.value) || 0;
+        if (count > 0) {
+          roles[inp.dataset.role] = count;
+          total += count;
+        }
+      });
+
+      if (total < 4) {
+        alert("Need at least 4 players (sum of all roles).");
+        return;
+      }
+      if (!roles.werewolf || roles.werewolf < 1) {
+        alert("You need at least 1 Werewolf.");
+        return;
+      }
+
+      const code = generateCode();
+      const roomRef = db.ref('rooms/' + code);
+
+      // Build available pool as a list of role keys (for easy random pick)
+      const pool = [];
+      Object.entries(roles).forEach(([role, count]) => {
+        for (let i = 0; i < count; i++) pool.push(role);
+      });
+
+      await roomRef.set({
+        createdAt: Date.now(),
+        config: roles,
+        totalPlayers: total,
+        available: pool,          // array of remaining role keys
+        players: {},              // playerId -> {name, role}
+        status: 'open'
+      });
+
+      currentRoom = code;
+      isHost = true;
+      home.classList.add('hidden');
+      hostView.classList.remove('hidden');
+      document.getElementById('host-code').textContent = code;
+
+      // Listen for updates
+      roomRef.on('value', snap => {
+        const data = snap.val();
+        if (!data) {
+          alert("Room was deleted.");
+          location.reload();
+          return;
+        }
+        updateHostUI(data);
+      });
+    });
+
+    function updateHostUI(data) {
+      const remainingEl = document.getElementById('host-remaining');
+      remainingEl.innerHTML = '';
+      const counts = {};
+      (data.available || []).forEach(r => counts[r] = (counts[r] || 0) + 1);
+
+      Object.keys(ROLE_DEFS).forEach(key => {
+        if (data.config[key]) {
+          const left = counts[key] || 0;
+          const badge = document.createElement('span');
+          badge.className = 'badge' + (left === 0 ? ' empty' : '');
+          badge.textContent = `${ROLE_DEFS[key].name}: ${left}/${data.config[key]}`;
+          remainingEl.appendChild(badge);
+        }
+      });
+
+      const playersEl = document.getElementById('host-players');
+      playersEl.innerHTML = '';
+      const players = data.players || {};
+      const claimed = Object.keys(players).length;
+      document.getElementById('host-status').textContent =
+        `${claimed} / ${data.totalPlayers} players claimed a role`;
+
+      Object.values(players).forEach(p => {
+        const item = document.createElement('div');
+        item.className = 'player-item';
+        item.innerHTML = `<span>${escapeHtml(p.name)}</span><span style="color:var(--muted)">claimed</span>`;
+        playersEl.appendChild(item);
+      });
+    }
+
+    // JOIN & CLAIM
+    document.getElementById('btn-join').addEventListener('click', async () => {
+      if (!checkFirebase()) return;
+
+      const code = document.getElementById('join-code').value.trim().toUpperCase();
+      const name = document.getElementById('join-name').value.trim();
+
+      if (!code || code.length < 4) {
+        alert("Enter a valid room code.");
+        return;
+      }
+      if (!name) {
+        alert("Enter your name.");
+        return;
+      }
+
+      const roomRef = db.ref('rooms/' + code);
+      const snap = await roomRef.once('value');
+      if (!snap.exists()) {
+        alert("Room not found. Check the code.");
+        return;
+      }
+
+      const data = snap.val();
+      if (data.status !== 'open') {
+        alert("This room is closed.");
+        return;
+      }
+      if (!data.available || data.available.length === 0) {
+        alert("All roles have already been claimed!");
+        return;
+      }
+
+      // Claim a random role atomically
+      currentPlayerId = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+
+      try {
+        await roomRef.transaction(current => {
+          if (!current || !current.available || current.available.length === 0) {
+            return; // abort
+          }
+          // Pick random index
+          const idx = Math.floor(Math.random() * current.available.length);
+          const role = current.available[idx];
+          // Remove from available
+          current.available.splice(idx, 1);
+          // Add player
+          if (!current.players) current.players = {};
+          current.players[currentPlayerId] = {
+            name: name,
+            role: role,
+            claimedAt: Date.now()
+          };
+          return current;
+        });
+
+        // Read back what we got
+        const after = await roomRef.child('players/' + currentPlayerId).once('value');
+        const me = after.val();
+        if (!me) {
+          alert("Failed to claim a role. Someone else may have taken the last ones. Try again.");
+          return;
+        }
+
+        currentRoom = code;
+        home.classList.add('hidden');
+        playerView.classList.remove('hidden');
+        document.getElementById('player-waiting').classList.add('hidden');
+        document.getElementById('player-role').classList.remove('hidden');
+
+        const def = ROLE_DEFS[me.role] || { name: me.role, team: "?", desc: "" };
+        document.getElementById('p-role').textContent = def.name;
+        document.getElementById('p-team').textContent = def.team + " Team";
+        document.getElementById('p-desc').textContent = def.desc;
+
+        // Color by team
+        const reveal = document.querySelector('.role-reveal');
+        if (def.team === 'Werewolf') {
+          reveal.style.background = 'linear-gradient(135deg, #450a0a, #7f1d1d)';
+          reveal.style.borderColor = '#ef4444';
+        } else {
+          reveal.style.background = 'linear-gradient(135deg, #2e1065, #4c1d95)';
+          reveal.style.borderColor = '#7c3aed';
+        }
+
+      } catch (err) {
+        console.error(err);
+        alert("Error claiming role. Please try again.");
+      }
+    });
+
+    // Copy invite
+    document.getElementById('btn-copy').addEventListener('click', () => {
+      const url = location.href.split('?')[0] + '?room=' + currentRoom;
+      navigator.clipboard.writeText(url).then(() => {
+        alert("Invite link copied!\n\n" + url);
+      }).catch(() => {
+        prompt("Copy this link:", url);
+      });
+    });
+
+    // End room
+    document.getElementById('btn-end').addEventListener('click', async () => {
+      if (!confirm("Delete this room? All players will lose access.")) return;
+      await db.ref('rooms/' + currentRoom).remove();
+      location.reload();
+    });
+
+    // Leave
+    document.getElementById('btn-leave').addEventListener('click', () => {
+      location.reload();
+    });
+
+    function escapeHtml(str) {
+      return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    }
+
+    // Auto-join from URL ?room=CODE
+    window.addEventListener('DOMContentLoaded', () => {
+      const params = new URLSearchParams(location.search);
+      const room = params.get('room');
+      if (room) {
+        document.querySelector('.tab[data-tab="join"]').click();
+        document.getElementById('join-code').value = room.toUpperCase();
+      }
+    });
+  </script>
+</body>
+</html>
