@@ -1,0 +1,2829 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Werewolf – Nightfall</title>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-database-compat.js"></script>
+  <style>
+    :root {
+      --bg: #0f0f13;
+      --card: #1a1a24;
+      --accent: #8b5cf6;
+      --accent-hover: #7c3aed;
+      --text: #e2e8f0;
+      --muted: #94a3b8;
+      --danger: #ef4444;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --border: #2d2d3a;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 12px;
+      padding-bottom: 32px;
+    }
+    h1 {
+      font-size: 1.5rem;
+      margin-bottom: 2px;
+      background: linear-gradient(135deg, #a78bfa, #c084fc);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle { color: var(--muted); margin-bottom: 16px; font-size: 0.85rem; text-align: center; }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 18px;
+      width: 100%;
+      max-width: 480px;
+      box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+      margin-bottom: 12px;
+    }
+    .card.wide { max-width: 560px; }
+    .view { width: 100%; display: flex; flex-direction: column; align-items: center; }
+    .hidden { display: none !important; }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      margin-top: 12px;
+    }
+    input[type="number"], input[type="text"], select, textarea {
+      width: 100%;
+      padding: 12px 14px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: #12121a;
+      color: var(--text);
+      font-size: 1rem;
+      outline: none;
+      font-family: inherit;
+    }
+    input:focus, select:focus, textarea:focus { border-color: var(--accent); }
+    .role-grid {
+      display: grid;
+      grid-template-columns: 1fr 70px;
+      gap: 8px 12px;
+      align-items: center;
+      margin-top: 8px;
+    }
+    .role-grid label { margin: 0; }
+    .total-line { text-align: right; color: var(--muted); font-size: 0.85rem; margin-top: 10px; }
+    .btn {
+      display: block;
+      width: 100%;
+      padding: 13px;
+      border: none;
+      border-radius: 12px;
+      font-size: 0.95rem;
+      font-weight: 600;
+      cursor: pointer;
+      margin-top: 12px;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.98); }
+    .btn-primary { background: var(--accent); color: white; }
+    .btn-primary:hover { background: var(--accent-hover); }
+    .btn-secondary { background: transparent; border: 1px solid var(--border); color: var(--text); }
+    .btn-secondary:hover { border-color: var(--accent); }
+    .btn-danger { background: var(--danger); color: white; }
+    .btn-success { background: var(--success); color: #052e16; }
+    .btn-warning { background: var(--warning); color: #1c1917; }
+    .btn:disabled { opacity: 0.45; cursor: not-allowed; }
+    .btn-sm { padding: 8px 12px; font-size: 0.85rem; width: auto; display: inline-block; margin: 4px 4px 4px 0; }
+    .btn-lg { padding: 16px; font-size: 1.05rem; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 16px; }
+    .tab {
+      flex: 1; padding: 10px; text-align: center; border-radius: 10px; cursor: pointer;
+      background: #12121a; border: 1px solid var(--border); color: var(--muted); font-weight: 500;
+    }
+    .tab.active { background: var(--accent); border-color: var(--accent); color: white; }
+    .room-code {
+      font-size: 2rem; font-weight: 700; letter-spacing: 5px; text-align: center; margin: 10px 0; color: #c4b5fd;
+    }
+    .status { text-align: center; padding: 10px; border-radius: 10px; margin: 10px 0; font-size: 0.9rem; }
+    .status.info { background: rgba(139,92,246,0.15); color: #c4b5fd; }
+    .status.success { background: rgba(34,197,94,0.15); color: #86efac; }
+    .status.error { background: rgba(239,68,68,0.15); color: #fca5a5; }
+    .status.warning { background: rgba(245,158,11,0.15); color: #fcd34d; }
+
+    /* ---- Role card ---- */
+    .role-reveal {
+      text-align: center; padding: 22px 16px; border-radius: 16px; margin: 12px 0;
+      background: linear-gradient(135deg, #2e1065, #4c1d95); border: 1px solid #7c3aed;
+      position: relative; cursor: pointer; user-select: none;
+    }
+    .role-reveal .role-icon { font-size: 2.4rem; line-height: 1; }
+    .role-reveal .role-name { font-size: 1.8rem; font-weight: 800; margin: 6px 0; }
+    .role-reveal .role-team { font-size: 0.9rem; opacity: 0.8; }
+    .role-reveal .mask-hint, .role-reveal .tap-hint {
+      font-size: 0.72rem; opacity: 0.55; margin-top: 10px;
+    }
+    .role-reveal .mask-hint { display: none; }
+    .role-reveal.masked .role-content { visibility: hidden; }
+    .role-reveal.masked .tap-hint { display: none; }
+    .role-reveal.masked .mask-hint {
+      display: block; position: absolute; inset: 0; margin: 0; opacity: 0.9; font-size: 1rem;
+      align-items: center; justify-content: center; text-align: center; padding-top: 44px;
+    }
+
+    /* ---- Lists ---- */
+    .player-list { margin-top: 12px; }
+    .player-item {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 10px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; gap: 8px;
+    }
+    .player-item .name { flex: 1; }
+    .player-item .name em { color: var(--muted); font-style: normal; font-size: 0.8rem; }
+    .player-item.dead .name { opacity: 0.55; text-decoration: line-through; }
+    .role-tag, .pill {
+      font-size: 0.75rem; padding: 2px 8px; border-radius: 20px;
+      background: #12121a; border: 1px solid var(--border); white-space: nowrap;
+    }
+    .pill.ok { color: #86efac; border-color: rgba(34,197,94,0.35); }
+    .pill.dead { color: #fca5a5; border-color: rgba(239,68,68,0.35); }
+    .pill.wolf { color: #fca5a5; border-color: rgba(239,68,68,0.5); }
+    .player-list.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 24px; text-align: left; }
+    @media (max-width: 520px) { .player-list.grid2 { grid-template-columns: 1fr; } }
+    .remaining, .badges { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .badge { background: #12121a; border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px; font-size: 0.78rem; }
+    .badge.empty { opacity: 0.4; text-decoration: line-through; }
+
+    /* ---- Roles left ---- */
+    .rl-wrap { display: flex; flex-wrap: wrap; gap: 8px; margin: 8px 0 4px; }
+    .rl-chip {
+      display: flex; align-items: center; gap: 6px; padding: 7px 12px; border-radius: 12px;
+      background: #12121a; border: 1px solid var(--border); font-size: 0.85rem;
+    }
+    .rl-chip.wolf { border-color: rgba(239,68,68,0.45); background: rgba(127,29,29,0.18); }
+    .rl-chip .rl-ct { font-weight: 800; font-size: 1rem; margin-left: 2px; }
+    .rl-chip .rl-pips { display: flex; gap: 3px; margin-left: 2px; }
+    .rl-chip .rl-pips i { width: 7px; height: 7px; border-radius: 50%; border: 1px solid var(--muted); display: block; }
+    .rl-chip .rl-pips i.on { background: #c4b5fd; border-color: #c4b5fd; }
+    .rl-chip.wolf .rl-pips i.on { background: #fca5a5; border-color: #fca5a5; }
+    .rl-chip.gone { opacity: 0.4; }
+    .rl-chip.gone .rl-nm { text-decoration: line-through; }
+    .rl-sum { color: var(--muted); font-size: 0.8rem; margin-top: 4px; }
+
+    .phase-bar { display: flex; gap: 6px; margin: 12px 0; flex-wrap: wrap; }
+    .script-box {
+      background: #12121a; border: 1px solid var(--border); border-radius: 12px; padding: 14px;
+      margin: 12px 0; font-size: 0.9rem; line-height: 1.5; white-space: pre-wrap;
+    }
+    .action-card { background: #12121a; border: 1px solid var(--border); border-radius: 12px; padding: 14px; margin: 10px 0; }
+    .action-card h4 { font-size: 0.95rem; margin-bottom: 8px; color: #c4b5fd; }
+    .target-list { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+    .target-btn {
+      padding: 9px 13px; border-radius: 8px; border: 1px solid var(--border);
+      background: #1a1a24; color: var(--text); cursor: pointer; font-size: 0.88rem;
+    }
+    .target-btn:hover, .target-btn.selected { border-color: var(--accent); background: rgba(139,92,246,0.2); }
+    .target-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .section-title { font-size: 0.95rem; font-weight: 600; margin: 16px 0 8px; color: #c4b5fd; }
+    .muted { color: var(--muted); font-size: 0.85rem; }
+    .footer { margin-top: 20px; font-size: 0.75rem; color: var(--muted); text-align: center; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; }
+    .row .btn { flex: 1; min-width: 120px; }
+    details.manual { margin-top: 14px; border: 1px dashed var(--border); border-radius: 12px; padding: 10px 14px; }
+    details.manual summary { cursor: pointer; color: var(--muted); font-size: 0.85rem; }
+    .toggle { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-size: 0.85rem; color: var(--muted); }
+    .toggle input { width: 18px; height: 18px; }
+    .tally-row { display: flex; align-items: center; gap: 10px; margin: 6px 0; text-align: left; font-size: 0.95rem; }
+    .tally-row .tn { width: 34%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .tally-row .tb { flex: 1; height: 12px; background: #12121a; border-radius: 8px; overflow: hidden; }
+    .tally-row .tb i { display: block; height: 100%; background: linear-gradient(90deg, #8b5cf6, #c084fc); border-radius: 8px; }
+    .tally-row .tc { width: 24px; text-align: right; font-weight: 700; }
+    .seer-line { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid var(--border); font-size: 0.9rem; }
+    .seer-line:last-child { border-bottom: 0; }
+    .big-code { font-size: 3.2rem; font-weight: 800; letter-spacing: 8px; color: #c4b5fd; margin: 8px 0; }
+
+    /* ================== SIDE SCENE (small banner) ================== */
+    .scene {
+      position: relative; width: 100%; height: 120px; border-radius: 16px; overflow: hidden;
+      border: 1px solid var(--border); margin-bottom: 12px;
+      background: linear-gradient(to bottom, var(--sky1), var(--sky2));
+      transition: --sky1 1.8s ease, --sky2 1.8s ease, --far 1.8s ease, --mid 1.8s ease, --near 1.8s ease,
+        --tip 1.8s ease, --cloud 1.8s ease, --house 1.8s ease, --roof 1.8s ease, --win 1.8s ease,
+        --fence 1.8s ease, --tree 1.8s ease, --moon 1.8s ease, --sun 1.8s ease;
+      --sky1:#5fb4f5; --sky2:#d4f0ff; --far:#8fc79a; --mid:#62ae70; --near:#4b9a58; --tip:#cbe07a;
+      --cloud:#ffffff; --house:#f6e7cf; --roof:#c2603f; --win:#8fbad4; --fence:#8b6b47; --tree:#3f7d52;
+      --moon:#f4f1de; --sun:#ffd75e;
+    }
+    .scene.short { height: 100px; }
+    .scene.tall { height: 160px; }
+    .scene[data-time="dusk"] {
+      --sky1:#3a2a6e; --sky2:#ff9d5c; --far:#6a5488; --mid:#4a4571; --near:#3b3d5c; --tip:#e0a25a;
+      --cloud:#ffb98a; --house:#d9b8a0; --roof:#8a3e4a; --win:#ffcf6a; --fence:#5a4030; --tree:#2b3358; --sun:#ffb347;
+    }
+    .scene[data-time="night"] {
+      --sky1:#050818; --sky2:#1a2250; --far:#1d2b47; --mid:#16223a; --near:#101a2c; --tip:#3f6b4a;
+      --cloud:#2b3566; --house:#2b3350; --roof:#1a2036; --win:#ffd86b; --fence:#2c2a3a; --tree:#0c1424;
+    }
+    .scene[data-time="blood"] {
+      --sky1:#1a0303; --sky2:#611414; --far:#3a1a24; --mid:#2a1219; --near:#1e0d12; --tip:#6b3a2a;
+      --cloud:#5a1d1d; --house:#3a2028; --roof:#240f14; --win:#ff6b4a; --fence:#2a1418; --tree:#14070a; --moon:#e04848;
+    }
+    .scene svg { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+    .scene .stars { opacity: 0; transition: opacity 1.6s; }
+    .scene[data-time="night"] .stars, .scene[data-time="blood"] .stars { opacity: 1; }
+    .scene .star { fill: #fff; animation: twinkle 3.4s ease-in-out infinite; }
+    .scene .sun, .scene .moon { transition: transform 1.9s ease; }
+    .scene .sun { transform: translate(0, 0); }
+    .scene .moon { transform: translate(0, 300px); }
+    .scene[data-time="dusk"] .sun { transform: translate(-40px, 82px); }
+    .scene[data-time="night"] .sun, .scene[data-time="blood"] .sun { transform: translate(0, 320px); }
+    .scene[data-time="night"] .moon, .scene[data-time="blood"] .moon { transform: translate(0, 0); }
+    .scene .sun-core { fill: var(--sun); }
+    .scene .sun-glow { fill: var(--sun); opacity: 0.25; }
+    .scene .moon-core { fill: var(--moon); }
+    .scene .moon-glow { fill: var(--moon); opacity: 0.16; }
+    .scene .crater { fill: #000; opacity: 0.08; }
+    .scene .cloud { fill: var(--cloud); opacity: 0.88; animation: drift 90s linear infinite; }
+    .scene .hill-far { fill: var(--far); }
+    .scene .hill-mid { fill: var(--mid); }
+    .scene .hill-near { fill: var(--near); }
+    .scene .tree { fill: var(--tree); }
+    .scene .house { fill: var(--house); }
+    .scene .roof { fill: var(--roof); }
+    .scene .win { fill: var(--win); }
+    .scene .mill-body { fill: var(--house); }
+    .scene .mill-blade { fill: var(--fence); }
+    .scene .fence { stroke: var(--fence); stroke-width: 2.4; fill: none; stroke-linecap: round; }
+    .scene .scare { stroke: var(--fence); stroke-width: 3; fill: none; stroke-linecap: round; }
+    .scene .scare-fill { fill: var(--fence); }
+    .scene .blades { fill: none; stroke: var(--tip); stroke-width: 1.7; stroke-linecap: round; }
+    .scene .sway { transform-box: fill-box; transform-origin: 50% 100%; animation: sway 4.6s ease-in-out infinite; }
+    .scene .flies { opacity: 0; transition: opacity 1.6s; }
+    .scene[data-time="night"] .flies { opacity: 1; }
+    .scene .fly { fill: #e8ff7a; animation: fly 6s ease-in-out infinite; }
+    .scene-cap {
+      position: absolute; left: 10px; top: 10px; padding: 5px 12px; border-radius: 999px;
+      background: rgba(10,10,20,0.55); color: #fff; font-size: 0.8rem; font-weight: 600;
+      backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px);
+    }
+    @keyframes twinkle { 0%,100% { opacity: 0.25; } 50% { opacity: 1; } }
+    @keyframes drift { from { transform: translateX(-140px); } to { transform: translateX(940px); } }
+    @keyframes sway { 0%,100% { transform: skewX(-3deg); } 50% { transform: skewX(3deg); } }
+    @keyframes fly {
+      0%,100% { transform: translate(0,0); opacity: 0.1; }
+      30% { transform: translate(10px,-8px); opacity: 1; }
+      60% { transform: translate(-6px,-14px); opacity: 0.4; }
+      80% { transform: translate(6px,-4px); opacity: 1; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      .scene *, .scene, .village-map * { animation: none !important; }
+    }
+
+    /* Dramatic reveal */
+    .reveal-stage {
+      margin: 16px 0; padding: 24px 16px; border-radius: 20px;
+      background: linear-gradient(160deg, #1a1030, #0f0f13 60%); border: 1px solid #4c1d95;
+      text-align: center; overflow: hidden; position: relative;
+    }
+    .reveal-label { font-size: 0.85rem; letter-spacing: 3px; text-transform: uppercase; color: #a78bfa; margin-bottom: 12px; }
+    .reveal-window {
+      height: 72px; overflow: hidden; position: relative;
+      mask-image: linear-gradient(to bottom, transparent, black 18%, black 82%, transparent);
+      -webkit-mask-image: linear-gradient(to bottom, transparent, black 18%, black 82%, transparent);
+    }
+    .reveal-reel { display: flex; flex-direction: column; align-items: center; will-change: transform; }
+    .reveal-item {
+      height: 72px; line-height: 72px; font-size: 2rem; font-weight: 800; white-space: nowrap;
+      color: #e2e8f0; transition: color 0.3s, text-shadow 0.3s, transform 0.3s;
+    }
+    .reveal-item.final { color: #fde68a; text-shadow: 0 0 28px rgba(253,230,138,0.55); transform: scale(1.06); }
+    .reveal-item.role-wolf { color: #fca5a5 !important; text-shadow: 0 0 24px rgba(239,68,68,0.5); }
+    .reveal-item.role-village { color: #86efac !important; text-shadow: 0 0 24px rgba(34,197,94,0.4); }
+    .reveal-drum { font-size: 0.95rem; color: var(--muted); margin-top: 12px; letter-spacing: 2px; min-height: 1.4em; }
+    .reveal-drum.role { color: #fde68a; font-weight: 700; font-size: 1.15rem; letter-spacing: 1px; }
+
+    /* ================== TOP-DOWN VILLAGE MAP ================== */
+    .village-wrap {
+      position: relative;
+      width: 100%;
+      max-width: 560px;
+      margin: 0 auto 12px;
+      border-radius: 18px;
+      overflow: hidden;
+      border: 1px solid var(--border);
+      background: #1a2a1a;
+      aspect-ratio: 1 / 1;
+      max-height: min(70vw, 440px);
+    }
+    /* Player mode: map fills the screen */
+    #player-view.play-mode {
+      max-width: none !important;
+      width: 100%;
+      min-height: 100vh;
+      padding: 0;
+      margin: 0;
+      position: relative;
+    }
+    #player-view.play-mode .village-wrap {
+      max-width: none;
+      max-height: none;
+      width: 100%;
+      height: min(100vw, calc(100vh - 0px));
+      aspect-ratio: auto;
+      border-radius: 0;
+      border: none;
+      margin: 0;
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+    }
+    #player-view.play-mode .player-hud {
+      position: fixed;
+      z-index: 30;
+      pointer-events: none;
+    }
+    #player-view.play-mode .player-hud > * { pointer-events: auto; }
+
+    .village-map {
+      width: 100%;
+      height: 100%;
+      display: block;
+      transition: filter 1.6s ease;
+    }
+    .village-wrap[data-time="day"] .village-map { filter: none; }
+    .village-wrap[data-time="dusk"] .village-map { filter: sepia(0.35) saturate(1.2) hue-rotate(-15deg) brightness(0.85); }
+    .village-wrap[data-time="night"] .village-map { filter: brightness(0.42) saturate(0.65) hue-rotate(18deg); }
+    .village-wrap[data-time="blood"] .village-map { filter: brightness(0.38) saturate(1.45) hue-rotate(-22deg); }
+
+    .village-overlay {
+      position: absolute; inset: 0; pointer-events: none;
+      background: transparent;
+      transition: background 1.6s ease;
+    }
+    .village-wrap[data-time="night"] .village-overlay {
+      background: radial-gradient(ellipse at 50% 28%, transparent 18%, rgba(5,8,24,0.58) 82%);
+    }
+    .village-wrap[data-time="blood"] .village-overlay {
+      background: radial-gradient(ellipse at 50% 40%, rgba(80,10,10,0.22), rgba(20,0,0,0.62));
+    }
+
+    .village-cap {
+      position: absolute; left: 12px; top: 12px; z-index: 5;
+      padding: 6px 14px; border-radius: 999px;
+      background: rgba(10,10,20,0.7); color: #fff; font-size: 0.85rem; font-weight: 600;
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+      pointer-events: none;
+    }
+
+    /* Life elements on map */
+    .v-life { position: absolute; pointer-events: none; z-index: 3; font-size: 1rem; }
+    .v-smoke {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: rgba(200,200,210,0.35);
+      animation: smokeUp 4s ease-out infinite;
+    }
+    @keyframes smokeUp {
+      0% { transform: translateY(0) scale(1); opacity: 0.5; }
+      100% { transform: translateY(-40px) scale(2.2); opacity: 0; }
+    }
+    .v-bird {
+      animation: birdFly 18s linear infinite;
+      font-size: 0.85rem; opacity: 0.7;
+    }
+    @keyframes birdFly {
+      0% { transform: translate(0, 0); }
+      50% { transform: translate(60px, -20px); }
+      100% { transform: translate(120px, 5px); }
+    }
+    .v-lantern {
+      width: 6px; height: 6px; border-radius: 50%;
+      background: #ffd86b; box-shadow: 0 0 10px 3px rgba(255,216,107,0.55);
+      animation: lanternPulse 2.8s ease-in-out infinite;
+    }
+    @keyframes lanternPulse {
+      0%,100% { opacity: 0.6; transform: scale(1); }
+      50% { opacity: 1; transform: scale(1.25); }
+    }
+    .village-wrap[data-time="day"] .v-lantern { opacity: 0; }
+    .v-animal { font-size: 0.9rem; animation: animalWander 12s ease-in-out infinite; opacity: 0.85; }
+    @keyframes animalWander {
+      0%,100% { transform: translate(0,0); }
+      25% { transform: translate(12px, -6px); }
+      50% { transform: translate(-8px, 4px); }
+      75% { transform: translate(6px, 8px); }
+    }
+
+    /* Player markers — bigger & more interactive */
+    .v-marker {
+      position: absolute;
+      transform: translate(-50%, -80%);
+      z-index: 4;
+      text-align: center;
+      cursor: pointer;
+      transition: opacity 0.35s, filter 0.35s, transform 0.2s;
+      pointer-events: auto;
+    }
+    .v-marker:hover { transform: translate(-50%, -80%) scale(1.12); z-index: 6; }
+    .v-marker .v-house {
+      width: 48px; height: 48px;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 1.55rem;
+      background: rgba(28,28,42,0.92);
+      border: 2.5px solid #6b7280;
+      border-radius: 12px;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.5);
+      transition: border-color 0.3s, background 0.3s, box-shadow 0.3s;
+      position: relative;
+    }
+    .v-marker.me .v-house {
+      border-color: #a78bfa;
+      box-shadow: 0 0 18px rgba(167,139,250,0.6);
+      animation: mePulse 2.4s ease-in-out infinite;
+    }
+    @keyframes mePulse {
+      0%,100% { box-shadow: 0 0 14px rgba(167,139,250,0.5); }
+      50% { box-shadow: 0 0 22px rgba(167,139,250,0.85); }
+    }
+    .v-marker.dead { opacity: 0.42; filter: grayscale(0.85); }
+    .v-marker.dead .v-house {
+      border-color: #7f1d1d;
+      background: rgba(55,18,18,0.75);
+    }
+    .v-marker.wolf-self .v-house {
+      border-color: #ef4444;
+      box-shadow: 0 0 14px rgba(239,68,68,0.45);
+    }
+    .v-marker.role-seer .v-house { border-color: #7c3aed; }
+    .v-marker.role-guardian .v-house { border-color: #3b82f6; }
+    .v-marker.role-hunter .v-house { border-color: #f59e0b; }
+    .v-marker .v-name {
+      font-size: 0.7rem;
+      font-weight: 700;
+      color: #e2e8f0;
+      text-shadow: 0 1px 4px #000;
+      max-width: 72px;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      margin-top: 3px;
+      background: rgba(0,0,0,0.55);
+      padding: 2px 7px;
+      border-radius: 6px;
+    }
+    .v-marker.dead .v-name { text-decoration: line-through; }
+
+    .village-wrap[data-time="night"] .v-marker:not(.dead) .v-house::after,
+    .village-wrap[data-time="dusk"] .v-marker:not(.dead) .v-house::after {
+      content: '';
+      position: absolute;
+      width: 7px; height: 7px;
+      background: #ffd86b;
+      border-radius: 2px;
+      box-shadow: 0 0 8px #ffd86b;
+      bottom: 10px; left: 50%;
+      transform: translateX(-50%);
+      opacity: 0.95;
+    }
+    .village-wrap[data-time="day"] .v-marker .v-house::after { display: none; }
+
+    /* Tooltip on marker tap/hover */
+    .v-tip {
+      position: absolute;
+      bottom: calc(100% + 6px);
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(15,15,25,0.95);
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 8px 12px;
+      font-size: 0.8rem;
+      white-space: nowrap;
+      z-index: 20;
+      pointer-events: none;
+      display: none;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+    }
+    .v-marker.show-tip .v-tip { display: block; }
+
+    /* ================== PLAYER HUD (game-like) ================== */
+    .hud-top {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 35;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      padding: 12px 14px;
+      pointer-events: none;
+    }
+    .hud-top > * { pointer-events: auto; }
+    .hud-phase-pill {
+      padding: 8px 16px;
+      border-radius: 999px;
+      background: rgba(10,10,20,0.75);
+      backdrop-filter: blur(10px);
+      font-size: 0.9rem;
+      font-weight: 600;
+      border: 1px solid rgba(255,255,255,0.08);
+      max-width: 60%;
+    }
+    .hud-pause-btn {
+      width: 46px; height: 46px;
+      border-radius: 12px;
+      background: rgba(10,10,20,0.8);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 1.2rem;
+      cursor: pointer;
+      backdrop-filter: blur(10px);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hud-pause-btn:active { transform: scale(0.95); }
+
+    .hud-right {
+      position: fixed;
+      right: 14px;
+      bottom: 90px;
+      z-index: 35;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+      align-items: flex-end;
+    }
+    .hud-action-btn {
+      width: 58px; height: 58px;
+      border-radius: 16px;
+      background: var(--accent);
+      color: white;
+      border: none;
+      font-size: 1.5rem;
+      box-shadow: 0 8px 24px rgba(139,92,246,0.5);
+      cursor: pointer;
+      position: relative;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .hud-action-btn.has-duty::after {
+      content: '';
+      position: absolute;
+      top: 4px; right: 4px;
+      width: 12px; height: 12px;
+      background: #f59e0b;
+      border-radius: 50%;
+      border: 2px solid var(--bg);
+      animation: dutyBlink 1.2s ease-in-out infinite;
+    }
+    @keyframes dutyBlink {
+      0%,100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.5; transform: scale(0.85); }
+    }
+    .hud-action-btn:active { transform: scale(0.94); }
+
+    .hud-bottom-left {
+      position: fixed;
+      left: 14px;
+      bottom: 20px;
+      z-index: 35;
+    }
+
+    /* Action menu — slides from RIGHT */
+    .action-drawer {
+      position: fixed;
+      inset: 0;
+      z-index: 55;
+      background: rgba(5,5,12,0.55);
+      backdrop-filter: blur(4px);
+      display: flex;
+      justify-content: flex-end;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.22s;
+    }
+    .action-drawer.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .action-panel {
+      width: min(100%, 400px);
+      height: 100%;
+      max-height: 100vh;
+      overflow-y: auto;
+      background: var(--card);
+      border-left: 1px solid var(--border);
+      padding: 18px 16px 32px;
+      transform: translateX(100%);
+      transition: transform 0.28s cubic-bezier(.2,.8,.2,1);
+      box-shadow: -12px 0 40px rgba(0,0,0,0.4);
+    }
+    .action-drawer.open .action-panel { transform: translateX(0); }
+    .action-panel-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 12px;
+    }
+    .action-panel-header h3 { font-size: 1.15rem; }
+
+    /* ================== STATUS / PAUSE DRAWER ================== */
+    /* ================== STATUS / PAUSE DRAWER ================== */
+    .status-fab { display: none; } /* replaced by hud-pause-btn */
+    .status-drawer {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(5,5,12,0.72);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    .status-drawer.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .status-panel {
+      width: 100%;
+      max-width: 480px;
+      max-height: 78vh;
+      overflow-y: auto;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px 20px 0 0;
+      padding: 20px 18px 28px;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1);
+    }
+    .status-drawer.open .status-panel { transform: translateY(0); }
+    .status-panel h3 {
+      font-size: 1.1rem;
+      margin-bottom: 4px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    .status-close {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 1.4rem;
+      cursor: pointer;
+      padding: 4px 8px;
+    }
+
+    /* ================== CHAT / DISCUSSION ================== */
+    .chat-fab {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background: rgba(30,41,59,0.92);
+      border: 1px solid var(--border);
+      color: var(--text);
+      font-size: 1.3rem;
+      box-shadow: 0 6px 20px rgba(0,0,0,0.4);
+      cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      position: relative;
+      backdrop-filter: blur(8px);
+    }
+    .chat-fab .chat-badge {
+      position: absolute;
+      top: 2px; right: 2px;
+      width: 10px; height: 10px;
+      background: var(--danger);
+      border-radius: 50%;
+      display: none;
+    }
+    .chat-fab.has-new .chat-badge { display: block; }
+    .chat-drawer {
+      position: fixed;
+      inset: 0;
+      z-index: 50;
+      background: rgba(5,5,12,0.72);
+      backdrop-filter: blur(6px);
+      display: flex;
+      align-items: flex-end;
+      justify-content: center;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 0.25s;
+    }
+    .chat-drawer.open {
+      opacity: 1;
+      pointer-events: auto;
+    }
+    .chat-panel {
+      width: 100%;
+      max-width: 480px;
+      height: 70vh;
+      max-height: 560px;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 20px 20px 0 0;
+      display: flex;
+      flex-direction: column;
+      transform: translateY(100%);
+      transition: transform 0.3s cubic-bezier(.2,.8,.2,1);
+    }
+    .chat-drawer.open .chat-panel { transform: translateY(0); }
+    .chat-header {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-weight: 600;
+    }
+    .chat-messages {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .chat-msg {
+      max-width: 85%;
+      padding: 8px 12px;
+      border-radius: 12px;
+      font-size: 0.9rem;
+      line-height: 1.35;
+      background: #12121a;
+      border: 1px solid var(--border);
+    }
+    .chat-msg.mine {
+      align-self: flex-end;
+      background: rgba(139,92,246,0.2);
+      border-color: rgba(139,92,246,0.4);
+    }
+    .chat-msg .cm-name {
+      font-size: 0.72rem;
+      font-weight: 700;
+      color: #c4b5fd;
+      margin-bottom: 2px;
+    }
+    .chat-msg.mine .cm-name { color: #e9d5ff; }
+    .chat-msg .cm-text { word-break: break-word; }
+    .chat-msg.system {
+      align-self: center;
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 0.8rem;
+      text-align: center;
+      max-width: 100%;
+    }
+    .chat-input-row {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      border-top: 1px solid var(--border);
+    }
+    .chat-input-row input {
+      flex: 1;
+      margin: 0;
+      padding: 10px 12px;
+    }
+    .chat-input-row .btn {
+      width: auto;
+      margin: 0;
+      padding: 10px 16px;
+    }
+    .chat-locked {
+      padding: 12px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.85rem;
+      border-top: 1px solid var(--border);
+    }
+
+    /* Player view layout adjustments */
+    #player-view .card { max-width: 520px; }
+    #player-view.play-mode .player-controls-legacy { display: none !important; }
+    .player-controls { width: 100%; max-width: 520px; }
+    .role-legend { display: none; }
+    #player-view.play-mode .role-legend {
+      display: none;
+    }
+
+    /* Role flavor chips on map legend */
+    .role-legend {
+      display: flex; flex-wrap: wrap; gap: 6px; justify-content: center;
+      margin: 6px 0 4px; font-size: 0.75rem; color: var(--muted);
+    }
+    .role-legend span {
+      display: inline-flex; align-items: center; gap: 4px;
+      padding: 3px 8px; border-radius: 8px; background: #12121a; border: 1px solid var(--border);
+    }
+  </style>
+</head>
+<body>
+  <h1>🐺 Werewolf</h1>
+  <p class="subtitle">Roles • Night actions • Voting • Discussion • Auto win detection</p>
+
+  <!-- ========== HOME ========== -->
+  <div id="home" class="card">
+    <div id="home-scene" class="short scene"></div>
+    <div class="tabs">
+      <div class="tab active" data-tab="create">Create Room</div>
+      <div class="tab" data-tab="join">Join Room</div>
+    </div>
+
+    <div id="create-panel">
+      <p class="muted" style="margin-bottom:8px;">
+        Set role counts. You will be the <strong>Narrator</strong>.
+      </p>
+      <div class="role-grid" id="role-inputs"></div>
+      <div class="total-line" id="role-total"></div>
+      <button class="btn btn-primary" id="btn-create">Create Room as Narrator</button>
+    </div>
+
+    <div id="join-panel" class="hidden">
+      <label>Room Code</label>
+      <input type="text" id="join-code" placeholder="e.g. ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:3px;text-align:center;font-size:1.2rem;">
+      <label>Your Name</label>
+      <input type="text" id="join-name" placeholder="Enter your name" maxlength="20">
+      <button class="btn btn-primary" id="btn-join">Join & Claim Role</button>
+    </div>
+  </div>
+
+  <!-- ========== NARRATOR VIEW ========== -->
+  <div id="host-view" class="view hidden" style="max-width:560px;">
+    <div id="host-scene" class="short scene"></div>
+
+    <div class="card wide">
+      <p class="muted" style="text-align:center;">Room Code</p>
+      <div class="room-code" id="host-code">------</div>
+      <div class="status info" id="host-status">Waiting for players...</div>
+
+      <div class="section-title">Players (secret roles)</div>
+      <div class="player-list" id="host-players"></div>
+
+      <div id="host-lobby-only">
+        <div class="section-title">Roles not yet claimed</div>
+        <div class="remaining" id="host-remaining"></div>
+        <button class="btn btn-success" id="btn-start-game" disabled>Start Game</button>
+      </div>
+
+      <div class="row" style="margin-top:8px;">
+        <button class="btn btn-secondary" id="btn-copy">Copy Invite</button>
+        <button class="btn btn-secondary" id="btn-open-public">📺 Public Screen</button>
+      </div>
+      <button class="btn btn-danger" id="btn-end" style="margin-top:8px;">End Room</button>
+    </div>
+
+    <div id="host-game" class="card wide hidden">
+      <div class="status warning" id="phase-label">Phase: Lobby</div>
+
+      <button class="btn btn-primary btn-lg" id="btn-next">Next</button>
+      <p class="muted" id="next-note" style="text-align:center;margin-top:8px;"></p>
+      <label class="toggle"><input type="checkbox" id="auto-advance" checked> Auto-advance when everyone has acted / voted</label>
+      <div class="status success hidden" id="win-hint" style="margin-top:12px;"></div>
+
+      <div class="section-title">Roles left (alive / total)</div>
+      <div class="rl-wrap" id="host-roles"></div>
+      <div class="rl-sum" id="host-roles-sum"></div>
+
+      <div class="section-title">🔒 Narrator Script</div>
+      <div class="script-box" id="script-box">Start the game to see scripts.</div>
+
+      <div id="host-lastnight-wrap" class="hidden">
+        <div class="section-title">🔒 What happened (host only)</div>
+        <div class="script-box" id="host-lastnight"></div>
+      </div>
+
+      <div class="section-title">🔒 Night Actions (host only)</div>
+      <div id="host-actions"><p class="muted">—</p></div>
+
+      <div class="section-title">Votes (current)</div>
+      <div id="host-votes"><p class="muted">No active vote.</p></div>
+
+      <div class="section-title">💬 Discussion (live)</div>
+      <div id="host-chat-preview" style="max-height:140px;overflow-y:auto;font-size:0.85rem;" class="script-box">No messages yet.</div>
+
+      <details class="manual">
+        <summary>Manual controls</summary>
+        <div class="section-title">Alive players</div>
+        <div class="player-list" id="host-alive-list"></div>
+        <div class="section-title">Jump to phase</div>
+        <div class="row">
+          <button class="btn btn-sm btn-primary" id="btn-phase-night">🌙 Night</button>
+          <button class="btn btn-sm btn-warning" id="btn-phase-day">☀️ Day</button>
+          <button class="btn btn-sm btn-secondary" id="btn-phase-vote">🗳️ Voting</button>
+          <button class="btn btn-sm btn-secondary" id="btn-clear-votes">Clear votes</button>
+        </div>
+        <div class="section-title">Declare winner</div>
+        <div class="row">
+          <button class="btn btn-sm btn-success" id="btn-win-village">Village Wins</button>
+          <button class="btn btn-sm btn-danger" id="btn-win-wolves">Werewolves Win</button>
+        </div>
+      </details>
+    </div>
+  </div>
+
+  <!-- ========== PUBLIC / PROJECTOR VIEW ========== -->
+  <div id="public-view" class="view hidden" style="max-width:720px;">
+    <div id="public-scene" class="tall scene"></div>
+    <div class="card wide" style="text-align:center;max-width:720px;">
+      <p class="muted">Public Screen • Room <span id="public-code"></span></p>
+      <div class="status warning" id="public-phase" style="font-size:1.2rem;margin:16px 0;">Waiting...</div>
+
+      <!-- Top-down village on public screen -->
+      <div id="public-village" class="village-wrap" data-time="day" style="max-width:560px;margin:0 auto 16px;">
+        <div class="village-cap" id="public-village-cap">🏡 Village</div>
+        <div class="village-overlay"></div>
+        <div id="public-markers"></div>
+      </div>
+
+      <div id="public-lobby" class="hidden">
+        <div class="muted">Room code</div>
+        <div class="big-code" id="public-bigcode"></div>
+        <div class="muted" id="public-joinurl" style="word-break:break-all;"></div>
+      </div>
+      <div class="script-box" id="public-script" style="font-size:1.1rem;min-height:80px;text-align:left;">
+        The Narrator will share announcements here.
+      </div>
+
+      <div id="public-reveal" class="reveal-stage hidden">
+        <div class="reveal-label" id="reveal-label">ELIMINATED</div>
+        <div class="reveal-window">
+          <div class="reveal-reel" id="reveal-reel"></div>
+        </div>
+        <div class="reveal-drum" id="reveal-drum">Rolling...</div>
+      </div>
+
+      <div id="public-tally-wrap" class="hidden">
+        <div class="section-title">Votes</div>
+        <div id="public-tally"></div>
+      </div>
+
+      <div id="public-roles-wrap" class="hidden">
+        <div class="section-title">Roles left</div>
+        <div class="rl-wrap" id="public-roles" style="justify-content:center;"></div>
+        <div class="rl-sum" id="public-roles-sum"></div>
+      </div>
+
+      <div class="section-title">Players</div>
+      <div class="player-list grid2" id="public-players"></div>
+      <div id="public-winner" class="hidden" style="margin-top:24px;padding:28px;border-radius:16px;">
+        <div style="font-size:2rem;font-weight:800;" id="public-winner-text"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ========== PLAYER VIEW ========== -->
+  <div id="player-view" class="view hidden play-mode" style="max-width:520px;">
+    <!-- Full-screen top-down village -->
+    <div id="player-village" class="village-wrap" data-time="day">
+      <div class="village-cap" id="player-village-cap">🏡 Village</div>
+      <div class="village-overlay"></div>
+      <div id="player-markers"></div>
+    </div>
+
+    <!-- HUD: phase + pause -->
+    <div class="hud-top">
+      <div class="hud-phase-pill" id="player-phase">Waiting...</div>
+      <button class="hud-pause-btn" id="btn-status" title="Status / Pause (Esc)">☰</button>
+    </div>
+
+    <!-- Right: action menu button -->
+    <div class="hud-right">
+      <button class="hud-action-btn" id="btn-action-menu" title="Your actions">⚡</button>
+    </div>
+
+    <!-- Bottom-left: chat -->
+    <div class="hud-bottom-left">
+      <button class="chat-fab" id="btn-chat" title="Discussion">
+        💬
+        <span class="chat-badge"></span>
+      </button>
+    </div>
+
+    <!-- ACTION MENU (slides from right) -->
+    <div class="action-drawer" id="action-drawer">
+      <div class="action-panel">
+        <div class="action-panel-header">
+          <h3>⚡ Actions</h3>
+          <button class="status-close" id="btn-action-close">✕</button>
+        </div>
+
+        <div id="player-role-section">
+          <div class="role-reveal" id="role-reveal-box">
+            <div class="role-content">
+              <div class="role-icon" id="p-icon"></div>
+              <div class="role-team" id="p-team">Village</div>
+              <div class="role-name" id="p-role">Villager</div>
+              <p style="margin-top:10px;font-size:0.85rem;opacity:0.8;" id="p-desc"></p>
+              <p style="margin-top:8px;font-size:0.85rem;color:#fecaca;" id="p-extra"></p>
+            </div>
+            <div class="tap-hint">Tap the card to hide your role</div>
+            <div class="mask-hint">🔒 Tap to show your role</div>
+          </div>
+        </div>
+
+        <div id="player-announce" class="script-box hidden"></div>
+
+        <div id="seer-log" class="hidden">
+          <div class="action-card" style="border-color:#7c3aed;">
+            <h4>🔮 Your visions</h4>
+            <div id="seer-log-list"></div>
+          </div>
+        </div>
+
+        <div id="player-action" class="hidden">
+          <div class="action-card">
+            <h4 id="action-title">Your Night Action</h4>
+            <p class="muted" style="margin-bottom:8px;" id="action-hint"></p>
+            <div id="pack-info" class="muted" style="margin-bottom:8px;"></div>
+            <div class="target-list" id="target-list"></div>
+            <button class="btn btn-primary" id="btn-submit-action" disabled>Lock in choice</button>
+            <button class="btn btn-secondary hidden" id="btn-hold-fire">Hold fire tonight</button>
+            <p class="status success hidden" id="action-done"></p>
+            <button class="btn btn-secondary btn-sm hidden" id="btn-change-action">Change choice</button>
+          </div>
+        </div>
+
+        <div id="player-hunter" class="hidden">
+          <div class="action-card" style="border-color:#f59e0b;">
+            <h4>🏹 Your last shot</h4>
+            <p class="muted" style="margin-bottom:8px;">You have fallen — but your bullet is still loaded. Pick someone to take with you.</p>
+            <div class="target-list" id="hunter-list"></div>
+            <button class="btn btn-warning" id="btn-hunter-fire" disabled>Fire</button>
+            <button class="btn btn-secondary" id="btn-hunter-none">Don't shoot</button>
+            <p class="status success hidden" id="hunter-done">Shot submitted ✓</p>
+          </div>
+        </div>
+
+        <div id="player-vote" class="hidden">
+          <div class="action-card">
+            <h4>🗳️ Vote to Eliminate</h4>
+            <p class="muted" style="margin-bottom:8px;">Choose who you want to vote out — or skip.</p>
+            <div class="target-list" id="vote-list"></div>
+            <button class="btn btn-warning" id="btn-submit-vote" disabled>Submit Vote</button>
+            <p class="status success hidden" id="vote-done"></p>
+            <button class="btn btn-secondary btn-sm hidden" id="btn-change-vote">Change vote</button>
+          </div>
+        </div>
+
+        <div id="player-end" class="hidden">
+          <div class="role-reveal" id="end-box" style="padding:36px 16px;cursor:default;">
+            <div class="role-team" id="end-team"></div>
+            <div class="role-name" id="end-title" style="font-size:2.2rem;"></div>
+            <p id="end-msg" style="margin-top:12px;opacity:0.85;"></p>
+          </div>
+        </div>
+
+        <p class="muted" id="action-idle-hint" style="margin-top:12px;text-align:center;">No action required right now. Explore the village or open Discussion.</p>
+        <button class="btn btn-secondary" id="btn-leave" style="margin-top:16px;">Leave room</button>
+      </div>
+    </div>
+
+    <!-- STATUS / PAUSE (Esc) -->
+    <div class="status-drawer" id="status-drawer">
+      <div class="status-panel">
+        <h3>Pause / Status <button class="status-close" id="btn-status-close">✕</button></h3>
+        <p class="muted" id="status-phase-text" style="margin-bottom:12px;"></p>
+        <div class="section-title" style="margin-top:0;">Roles left</div>
+        <div class="rl-wrap" id="player-roles"></div>
+        <div class="rl-sum" id="player-roles-sum"></div>
+        <div class="section-title">Players</div>
+        <div class="player-list" id="player-list"></div>
+        <p class="muted" style="margin-top:14px;text-align:center;">Press <strong>Esc</strong> to close</p>
+      </div>
+    </div>
+
+    <!-- CHAT -->
+    <div class="chat-drawer" id="chat-drawer">
+      <div class="chat-panel">
+        <div class="chat-header">
+          <span>💬 Discussion</span>
+          <button class="status-close" id="btn-chat-close">✕</button>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-row" id="chat-input-row">
+          <input type="text" id="chat-input" placeholder="Say something..." maxlength="200" autocomplete="off">
+          <button class="btn btn-primary" id="btn-chat-send">Send</button>
+        </div>
+        <div class="chat-locked hidden" id="chat-locked">Chat is closed during night. Eyes closed.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="footer">
+    Narrator = secrets only. Public screen = projector safe. Players see role, village map &amp; private results.
+  </div>
+
+  <!-- ================= GAME RULES (pure functions) ================= -->
+  <script id="game-logic">
+    const ROLE_ORDER = ['werewolf', 'seer', 'guardian', 'hunter', 'villager'];
+
+    const ROLE_DEFS = {
+      villager: { name: "Villager", icon: "🧑‍🌾", team: "Village",
+        desc: "No special power. Find the werewolves through discussion and voting.",
+        mapIcon: "🏠" },
+      werewolf: { name: "Werewolf", icon: "🐺", team: "Werewolf", act: "wolf",
+        desc: "Each night the pack votes on one player to eliminate. You know your packmates.",
+        mapIcon: "🐺" },
+      seer:     { name: "Seer", icon: "🔮", team: "Village", act: "seer",
+        desc: "Each night, learn whether one player is a Werewolf.",
+        mapIcon: "🔮" },
+      guardian: { name: "Guardian", icon: "🛡️", team: "Village", act: "guardian",
+        desc: "Each night, shield one player from every night attack — yourself included. You can't shield the same player two nights in a row.",
+        mapIcon: "🛡️" },
+      hunter:   { name: "Hunter", icon: "🏹", team: "Village", act: "hunter",
+        desc: "You carry one bullet. Shoot anyone on any night — or, if you die with the bullet unused, take a last shot. You are not a werewolf, so aim carefully.",
+        mapIcon: "🏹" }
+    };
+
+    const REVEAL_STEP_MS = 7000;
+
+    function playersOf(d) { return (d && d.players) || {}; }
+    function isAlive(d, id) { return ((d && d.alive) || {})[id] !== false; }
+    function aliveIds(d) { return Object.keys(playersOf(d)).filter(id => isAlive(d, id)); }
+    function roleOf(d, id) { const p = playersOf(d)[id]; return p ? p.role : null; }
+    function nameOf(d, id) { const p = playersOf(d)[id]; return p ? p.name : 'Someone'; }
+    function isWolf(d, id) { return roleOf(d, id) === 'werewolf'; }
+    function bulletsOf(d, id) { return Number(((d && d.bullets) || {})[id]) || 0; }
+    function actOf(d, key, id) { return (((d && d.actions) || {})[key] || {})[id]; }
+    function shuffle(arr) {
+      const a = arr.slice();
+      for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+      }
+      return a;
+    }
+
+    function roleCounts(d) {
+      const out = {};
+      Object.keys(d.config || {}).forEach(r => { out[r] = { alive: 0, total: Number(d.config[r]) || 0 }; });
+      Object.entries(playersOf(d)).forEach(([id, p]) => {
+        if (!out[p.role]) out[p.role] = { alive: 0, total: 0 };
+        if (isAlive(d, id)) out[p.role].alive++;
+      });
+      return out;
+    }
+
+    function winnerFor(aliveMap, d) {
+      let wolves = 0, others = 0;
+      Object.keys(playersOf(d)).forEach(id => {
+        if (!aliveMap[id]) return;
+        if (isWolf(d, id)) wolves++; else others++;
+      });
+      if (wolves === 0) return 'village';
+      if (wolves >= others) return 'werewolf';
+      return null;
+    }
+    function currentWinner(d) {
+      const m = {}; aliveIds(d).forEach(id => m[id] = true);
+      return Object.keys(playersOf(d)).length ? winnerFor(m, d) : null;
+    }
+
+    function requiredActors(d) {
+      return aliveIds(d).filter(id => {
+        const role = roleOf(d, id);
+        const def = ROLE_DEFS[role];
+        if (!def || !def.act) return false;
+        if (role === 'hunter' && bulletsOf(d, id) < 1) return false;
+        return true;
+      });
+    }
+    function pendingActors(d) {
+      return requiredActors(d).filter(id => !actOf(d, ROLE_DEFS[roleOf(d, id)].act, id));
+    }
+
+    function validTargets(d, id) {
+      const role = roleOf(d, id);
+      const alive = aliveIds(d);
+      if (role === 'werewolf') return alive.filter(x => !isWolf(d, x));
+      if (role === 'seer') return alive.filter(x => x !== id);
+      if (role === 'guardian') return alive.filter(x => x !== ((d.guardianLast || {})[id]));
+      if (role === 'hunter') return alive.filter(x => x !== id);
+      return [];
+    }
+
+    function newState(d) {
+      const S = { d, alive: {}, bul: Object.assign({}, d.bullets || {}), upd: {},
+        ann: [], host: [], entries: [], newDead: [], queue: [] };
+      aliveIds(d).forEach(id => S.alive[id] = true);
+      return S;
+    }
+    function kill(S, id) {
+      if (!S.alive[id]) return false;
+      S.alive[id] = false;
+      S.upd['alive/' + id] = false;
+      S.newDead.push(id);
+      S.entries.push({ name: nameOf(S.d, id), role: roleOf(S.d, id) });
+      return true;
+    }
+
+    function conclude(S, afterPhase, label) {
+      const d = S.d;
+      const winner = winnerFor(S.alive, d);
+      S.newDead.forEach(id => {
+        if (roleOf(d, id) === 'hunter' && (S.bul[id] || 0) > 0 && !S.queue.includes(id)) S.queue.push(id);
+      });
+      if (S.entries.length) S.upd.reveal = { seq: Date.now(), label: label || 'ELIMINATED', entries: S.entries };
+
+      if (winner === 'village' || (winner && !S.queue.length)) {
+        S.upd.status = 'ended';
+        S.upd.phase = 'ended';
+        S.upd.winner = winner;
+        S.upd.hunterPending = null;
+        S.upd.hunterQueue = null;
+        S.ann.push('', winner === 'village'
+          ? '🏆 VILLAGE WINS!\nAll werewolves have been eliminated.'
+          : '🐺 WEREWOLVES WIN!\nThe wolves have taken over the village.');
+      } else if (S.queue.length) {
+        S.upd.phase = 'hunter';
+        S.upd.hunterPending = S.queue[0];
+        S.upd.hunterQueue = S.queue.slice(1);
+        S.upd.afterHunter = afterPhase;
+        S.ann.push('', `🏹 ${nameOf(d, S.queue[0])} was the Hunter! One last shot...`);
+      } else {
+        S.upd.phase = afterPhase;
+        S.upd.hunterPending = null;
+        S.upd.hunterQueue = null;
+        if (afterPhase === 'day') S.ann.push('', 'Discuss and find the werewolves.');
+        if (afterPhase === 'elimination') S.ann.push('', 'Night is coming...');
+      }
+      S.upd.publicAnnouncement = S.ann.join('\n');
+      return S;
+    }
+
+    function planNight(d) {
+      const S = newState(d);
+      const n = d.nightNumber || 1;
+      const act = d.actions || {};
+
+      const tally = {};
+      Object.entries(act.wolf || {}).forEach(([wid, t]) => {
+        if (S.alive[wid] && isWolf(d, wid) && S.alive[t] && !isWolf(d, t)) tally[t] = (tally[t] || 0) + 1;
+      });
+      let wolfTarget = null;
+      const max = Math.max(0, ...Object.values(tally));
+      if (max > 0) {
+        const top = Object.keys(tally).filter(k => tally[k] === max);
+        wolfTarget = top[Math.floor(Math.random() * top.length)];
+      }
+
+      const shield = {};
+      aliveIds(d).filter(id => roleOf(d, id) === 'guardian').forEach(gid => {
+        const t = (act.guardian || {})[gid];
+        if (t && S.alive[t]) {
+          shield[t] = true;
+          S.upd['guardianLast/' + gid] = t;
+          S.host.push(`🛡️ ${nameOf(d, gid)} (Guardian) protected ${nameOf(d, t)}`);
+        } else {
+          S.upd['guardianLast/' + gid] = null;
+          S.host.push(`🛡️ ${nameOf(d, gid)} (Guardian) protected nobody`);
+        }
+      });
+
+      const attacks = [];
+      if (wolfTarget) {
+        attacks.push({ victim: wolfTarget, by: 'wolves' });
+        S.host.push(`🐺 Werewolves chose ${nameOf(d, wolfTarget)}`);
+      } else {
+        S.host.push('🐺 Werewolves did not choose a target');
+      }
+      aliveIds(d).filter(id => roleOf(d, id) === 'hunter' && bulletsOf(d, id) > 0).forEach(hid => {
+        const t = (act.hunter || {})[hid];
+        if (t && t !== 'hold' && S.alive[t] && t !== hid) {
+          attacks.push({ victim: t, by: 'hunter', attacker: hid });
+          S.bul[hid] = 0;
+          S.upd['bullets/' + hid] = 0;
+          S.host.push(`🏹 ${nameOf(d, hid)} (Hunter) shot ${nameOf(d, t)}`);
+        } else {
+          S.host.push(`🏹 ${nameOf(d, hid)} (Hunter) held fire`);
+        }
+      });
+      attacks.forEach(a => {
+        if (shield[a.victim]) {
+          S.host.push(`   ↳ blocked by the Guardian — ${nameOf(d, a.victim)} survives`);
+        } else {
+          kill(S, a.victim);
+        }
+      });
+
+      aliveIds(d).filter(id => roleOf(d, id) === 'seer').forEach(sid => {
+        const t = (act.seer || {})[sid];
+        if (t && playersOf(d)[t]) {
+          const w = isWolf(d, t);
+          S.upd[`seerLog/${sid}/n${n}`] = { targetId: t, targetName: nameOf(d, t), isWerewolf: w };
+          S.host.push(`🔮 ${nameOf(d, sid)} (Seer) checked ${nameOf(d, t)} → ${w ? 'WEREWOLF' : 'not a werewolf'}`);
+        } else {
+          S.host.push(`🔮 ${nameOf(d, sid)} (Seer) did not investigate`);
+        }
+      });
+
+      S.ann.push(`☀️ Morning of Day ${n}`, '');
+      if (!S.newDead.length) {
+        S.ann.push('✅ Nobody died last night.');
+      } else {
+        S.ann.push('💀 Found dead this morning:');
+        S.newDead.forEach(id => S.ann.push('   • ' + nameOf(d, id)));
+      }
+      S.host.push('');
+      S.newDead.forEach(id => S.host.push(`☠️ ${nameOf(d, id)} was the ${ROLE_DEFS[roleOf(d, id)].name}`));
+      S.upd.hostNightNotes = S.host.join('\n');
+      return conclude(S, 'day', '💀 FOUND DEAD');
+    }
+
+    function planVote(d) {
+      const S = newState(d);
+      const n = d.nightNumber || 1;
+      const votes = d.votes || {};
+      const tally = {};
+      Object.entries(votes).forEach(([vid, t]) => {
+        if (S.alive[vid] && t !== 'skip' && S.alive[t] && t !== vid) tally[t] = (tally[t] || 0) + 1;
+      });
+      const entries = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+      S.ann.push(`🗳️ Verdict — Day ${n}`, '');
+      const top = entries.length ? entries[0][1] : 0;
+      const leaders = entries.filter(e => e[1] === top);
+      if (!entries.length) {
+        S.ann.push('Nobody was voted for — nobody is eliminated.');
+      } else if (leaders.length > 1) {
+        S.ann.push(`⚖️ Tie between ${leaders.map(e => nameOf(d, e[0])).join(' & ')} — nobody is eliminated.`);
+      } else {
+        kill(S, leaders[0][0]);
+        S.ann.push(`⚖️ The village eliminated ${nameOf(d, leaders[0][0])}.`);
+      }
+      S.upd.voteTally = entries.length ? entries.map(([id, c]) => ({ name: nameOf(d, id), count: c })) : null;
+      return conclude(S, 'elimination', '⚖️ ELIMINATED');
+    }
+
+    function planHunterShot(d) {
+      const hid = d.hunterPending;
+      const choice = ((d.actions || {}).hunterFinal || {})[hid];
+      if (!hid || !choice) return null;
+      const S = newState(d);
+      S.queue = (d.hunterQueue || []).slice();
+      S.ann.push(d.publicAnnouncement || '');
+      S.bul[hid] = 0;
+      S.upd['bullets/' + hid] = 0;
+      S.upd['actions/hunterFinal/' + hid] = null;
+      if (choice !== 'none' && S.alive[choice] && choice !== hid) {
+        kill(S, choice);
+        S.ann.push('', `🏹 ${nameOf(d, hid)} fired a last shot and hit ${nameOf(d, choice)}!`);
+      } else {
+        S.ann.push('', `🏹 ${nameOf(d, hid)} chose not to shoot.`);
+      }
+      return conclude(S, d.afterHunter || 'day', '🏹 SHOT DOWN');
+    }
+
+    function planNextNight(d) {
+      const n = (d.nightNumber || 0) + 1;
+      return {
+        phase: 'night', nightNumber: n, actions: null, votes: null, voteTally: null, reveal: null,
+        hostNightNotes: null, hunterPending: null, hunterQueue: null,
+        publicAnnouncement: `🌙 Night ${n} falls.\nThe village goes to sleep...`
+      };
+    }
+
+    function planStart(d, reshuffle) {
+      const ids = Object.keys(playersOf(d));
+      const upd = {
+        status: 'playing', phase: 'night', nightNumber: 1,
+        actions: null, votes: null, voteTally: null, reveal: null, winner: null,
+        seerLog: null, guardianLast: null, hostNightNotes: null,
+        hunterPending: null, hunterQueue: null, afterHunter: null,
+        publicAnnouncement: '🌙 Night 1 falls.\nThe village goes to sleep...',
+        chat: null
+      };
+      const alive = {}; ids.forEach(id => alive[id] = true);
+      upd.alive = alive;
+      const roles = {};
+      ids.forEach(id => roles[id] = roleOf(d, id));
+      if (reshuffle) {
+        const pool = [];
+        Object.entries(d.config || {}).forEach(([r, c]) => { for (let i = 0; i < c; i++) pool.push(r); });
+        if (pool.length === ids.length) {
+          const dealt = shuffle(pool);
+          ids.forEach((id, i) => { roles[id] = dealt[i]; upd['players/' + id + '/role'] = dealt[i]; });
+        }
+      }
+      const bullets = {};
+      ids.forEach(id => { if (roles[id] === 'hunter') bullets[id] = 1; });
+      upd.bullets = Object.keys(bullets).length ? bullets : null;
+      return upd;
+    }
+  </script>
+
+  <!-- ================= UI + FIREBASE ================= -->
+  <script id="game-ui">
+    const firebaseConfig = {
+      apiKey: "AIzaSyBCHul84cI33tjCUJWA3H6cnIU2MN_NlPs",
+      authDomain: "werewolf-game-474bd.firebaseapp.com",
+      databaseURL: "https://werewolf-game-474bd-default-rtdb.asia-southeast1.firebasedatabase.app",
+      projectId: "werewolf-game-474bd",
+      storageBucket: "werewolf-game-474bd.firebasestorage.app",
+      messagingSenderId: "822274909096",
+      appId: "1:822274909096:web:ad465edc44c5e911ed739d",
+      measurementId: "G-NF1N0BJ80M"
+    };
+
+    const $ = id => document.getElementById(id);
+    function esc(str) { return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;'); }
+
+    let db = null;
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+    } catch (e) { console.warn("Firebase not configured", e); }
+
+    function checkFirebase() {
+      if (!db || firebaseConfig.apiKey === "YOUR_API_KEY") {
+        alert("Please put your Firebase config in the HTML file first.");
+        return false;
+      }
+      return true;
+    }
+
+    let currentRoom = null, currentPlayerId = null, isHost = false, isPublic = false;
+    let roomRef = null, roomData = null;
+    let selectedTarget = null, selectedVote = null, selectedHunter = null;
+    let editingAction = false, editingVote = false, pickCtx = '';
+    let busy = false, nextFn = null, endingRoom = false;
+    let chatRef = null, lastChatSeen = 0, chatOpen = false;
+
+    function storeFor(key) { return key === 'ww_host' ? 'localStorage' : 'sessionStorage'; }
+    function store(key, val) {
+      try {
+        const st = window[storeFor(key)];
+        if (val == null) st.removeItem(key); else st.setItem(key, JSON.stringify(val));
+      } catch (e) {}
+    }
+    function load(key) {
+      try { return JSON.parse(window[storeFor(key)].getItem(key)); } catch (e) { return null; }
+    }
+
+    /* ============================================================
+       SIDE BANNER SCENE (existing)
+       ============================================================ */
+    ['--sky1', '--sky2', '--far', '--mid', '--near', '--tip', '--cloud', '--house', '--roof', '--win',
+     '--fence', '--tree', '--moon', '--sun'].forEach(n => {
+      try { CSS.registerProperty({ name: n, syntax: '<color>', inherits: true, initialValue: '#000' }); } catch (e) {}
+    });
+
+    function buildSceneSvg() {
+      let seed = 11;
+      const rnd = () => (seed = seed * 16807 % 2147483647) / 2147483647;
+      let stars = '';
+      for (let i = 0; i < 48; i++) {
+        stars += `<circle class="star" cx="${Math.round(rnd() * 800)}" cy="${Math.round(6 + rnd() * 130)}" r="${(0.5 + rnd() * 1.2).toFixed(1)}" style="animation-delay:-${(rnd() * 4).toFixed(1)}s"/>`;
+      }
+      const blades = (n, x0, x1, y0, y1, delay) => {
+        let d = '';
+        for (let i = 0; i < n; i++) {
+          const x = x0 + rnd() * (x1 - x0), y = y0 + rnd() * (y1 - y0), h = 9 + rnd() * 13, l = (rnd() - 0.5) * 7;
+          d += `M${x.toFixed(0)} ${y.toFixed(0)}q${(l / 2).toFixed(1)} ${(-h / 2).toFixed(1)} ${l.toFixed(1)} ${(-h).toFixed(1)}`;
+        }
+        return `<path class="blades sway" style="animation-delay:-${delay}s" d="${d}"/>`;
+      };
+      let grass = '';
+      for (let i = 0; i < 8; i++) grass += blades(34, i * 100, i * 100 + 100, 244, 298, (i * 0.9).toFixed(1));
+      const house = (x, y, w, h) =>
+        `<g transform="translate(${x} ${y})"><rect class="house" width="${w}" height="${h}"/><path class="roof" d="M-3 0L${w / 2} -${Math.round(h * 0.75)}L${w + 3} 0Z"/><rect class="win" x="${w * 0.32}" y="${h * 0.32}" width="${w * 0.26}" height="${h * 0.42}"/></g>`;
+      const pine = (x, y, s) =>
+        `<g class="tree" transform="translate(${x} ${y}) scale(${s})"><path d="M0 -46L-13 -18H-6L-17 6H17L6 -18H13Z"/><rect x="-2.5" y="6" width="5" height="9"/></g>`;
+      const cloud = (y, delay, s) =>
+        `<g transform="translate(0 ${y}) scale(${s})"><g class="cloud" style="animation-delay:-${delay}s"><ellipse cx="0" cy="0" rx="34" ry="11"/><ellipse cx="-16" cy="-8" rx="18" ry="11"/><ellipse cx="12" cy="-11" rx="22" ry="13"/></g></g>`;
+      let posts = '';
+      for (let x = 520; x <= 700; x += 30) posts += `M${x} 219v-17`;
+      let flies = '';
+      for (let i = 0; i < 12; i++) {
+        flies += `<circle class="fly" cx="${Math.round(rnd() * 800)}" cy="${Math.round(196 + rnd() * 84)}" r="2.2" style="animation-delay:-${(rnd() * 6).toFixed(1)}s"/>`;
+      }
+      return `<svg viewBox="0 0 800 300" preserveAspectRatio="xMidYMax slice" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <g class="stars">${stars}</g>
+        <g class="sun"><circle class="sun-glow" cx="560" cy="74" r="58"/><circle class="sun-core" cx="560" cy="74" r="32"/></g>
+        <g class="moon"><circle class="moon-glow" cx="300" cy="72" r="50"/><circle class="moon-core" cx="300" cy="72" r="26"/>
+          <circle class="crater" cx="292" cy="66" r="6"/><circle class="crater" cx="310" cy="80" r="4"/><circle class="crater" cx="306" cy="62" r="3"/></g>
+        ${cloud(48, 10, 1)}${cloud(90, 44, 0.8)}${cloud(30, 70, 0.7)}
+        <path class="hill-far" d="M0 186C110 160 220 168 330 184S520 172 600 168S740 164 800 172L800 300L0 300Z"/>
+        <g transform="translate(150 172)">
+          <path class="mill-body" d="M-9 0L-5 -38H5L9 0Z"/><path class="roof" d="M-7 -38L0 -47L7 -38Z"/>
+          <g transform="translate(0 -38)"><g class="mill-blade">
+            <path d="M-2 0L-1.5 -34H1.5L2 0Z"/><path d="M-2 0L-1.5 34H1.5L2 0Z"/>
+            <path d="M0 -2L34 -1.5V1.5L0 2Z"/><path d="M0 -2L-34 -1.5V1.5L0 2Z"/>
+            <animateTransform attributeName="transform" type="rotate" from="0" to="360" dur="28s" repeatCount="indefinite"/>
+          </g></g>
+        </g>
+        ${house(566, 158, 26, 15)}${house(602, 155, 22, 17)}${house(634, 158, 20, 14)}
+        <path class="hill-mid" d="M0 214C150 194 300 204 430 212S660 196 800 204L800 300L0 300Z"/>
+        ${pine(48, 214, 1.1)}${pine(80, 219, 0.82)}${pine(742, 208, 1.15)}${pine(772, 214, 0.88)}
+        <path class="fence" d="${posts}M516 210L704 204M516 218L704 212"/>
+        <path class="hill-near" d="M0 252C160 236 330 250 500 244S720 236 800 246L800 300L0 300Z"/>
+        <g><path class="scare" d="M280 262V226M262 236H298"/><circle class="scare-fill" cx="280" cy="221" r="6"/><path class="scare-fill" d="M271 217H289L280 206Z"/></g>
+        ${grass}
+        <g class="flies">${flies}</g>
+      </svg>`;
+    }
+    const SCENE_HTML = buildSceneSvg();
+    function mountScene(el) {
+      if (!el) return;
+      el.classList.add('scene');
+      el.innerHTML = SCENE_HTML + '<div class="scene-cap"></div>';
+      el.dataset.time = 'day';
+    }
+    function setScene(el, time, cap) {
+      if (!el) return;
+      if (el.dataset.time !== time) el.dataset.time = time;
+      const c = el.querySelector('.scene-cap');
+      if (c) { c.textContent = cap || ''; c.style.display = cap ? '' : 'none'; }
+    }
+    function sceneTimeFor(d) {
+      const ph = d.phase || 'lobby';
+      if (ph === 'ended') return d.winner === 'werewolf' ? 'blood' : 'day';
+      if (ph === 'night') return 'night';
+      if (ph === 'voting' || ph === 'elimination' || ph === 'hunter') return 'dusk';
+      return 'day';
+    }
+    function sceneCapFor(d) {
+      const n = d.nightNumber || 0;
+      switch (d.phase) {
+        case 'night': return `🌙 Night ${n}`;
+        case 'day': return `☀️ Day ${n}`;
+        case 'voting': return `🗳️ Day ${n} · Voting`;
+        case 'elimination': return `⚖️ Day ${n} · Verdict`;
+        case 'hunter': return '🏹 The Hunter takes a shot';
+        case 'ended': return d.winner === 'village' ? '🏆 Village wins' : '🐺 Werewolves win';
+        default: return '🏡 Waiting for players';
+      }
+    }
+
+    /* ============================================================
+       TOP-DOWN VILLAGE MAP
+       ============================================================ */
+    function buildVillageSvg() {
+      // Richer top-down village with more life
+      return `<svg class="village-map" viewBox="0 0 500 500" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <pattern id="grassPat" width="24" height="24" patternUnits="userSpaceOnUse">
+            <circle cx="5" cy="7" r="1.3" fill="#4a7c52"/>
+            <circle cx="16" cy="14" r="1.1" fill="#4a7c52"/>
+            <circle cx="12" cy="4" r="0.9" fill="#35603c"/>
+            <circle cx="3" cy="18" r="0.7" fill="#3d6b45"/>
+          </pattern>
+          <radialGradient id="sqGrad" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#a89070"/>
+            <stop offset="100%" stop-color="#6a5840"/>
+          </radialGradient>
+        </defs>
+        <!-- Ground -->
+        <rect width="500" height="500" fill="#3a6842"/>
+        <rect width="500" height="500" fill="url(#grassPat)" opacity="0.4"/>
+        <!-- Outer forest ring -->
+        <g fill="#234a30" opacity="0.9">
+          <ellipse cx="40" cy="40" rx="36" ry="30"/><ellipse cx="90" cy="28" rx="28" ry="24"/>
+          <ellipse cx="140" cy="22" rx="22" ry="18"/><ellipse cx="200" cy="18" rx="26" ry="16"/>
+          <ellipse cx="260" cy="20" rx="24" ry="18"/><ellipse cx="320" cy="24" rx="28" ry="20"/>
+          <ellipse cx="380" cy="30" rx="30" ry="24"/><ellipse cx="440" cy="42" rx="34" ry="28"/>
+          <ellipse cx="470" cy="100" rx="28" ry="24"/><ellipse cx="480" cy="160" rx="22" ry="28"/>
+          <ellipse cx="485" cy="230" rx="20" ry="30"/><ellipse cx="480" cy="300" rx="24" ry="26"/>
+          <ellipse cx="465" cy="370" rx="30" ry="28"/><ellipse cx="430" cy="440" rx="34" ry="28"/>
+          <ellipse cx="360" cy="470" rx="30" ry="24"/><ellipse cx="290" cy="480" rx="28" ry="18"/>
+          <ellipse cx="220" cy="485" rx="26" ry="16"/><ellipse cx="150" cy="475" rx="28" ry="20"/>
+          <ellipse cx="80" cy="455" rx="32" ry="26"/><ellipse cx="30" cy="400" rx="28" ry="30"/>
+          <ellipse cx="18" cy="330" rx="22" ry="28"/><ellipse cx="15" cy="250" rx="20" ry="32"/>
+          <ellipse cx="22" cy="170" rx="24" ry="28"/><ellipse cx="35" cy="100" rx="28" ry="26"/>
+        </g>
+        <!-- Dirt paths (cross + diagonals) -->
+        <path d="M250 55 L250 445 M55 250 L445 250" stroke="#7a6548" stroke-width="36" stroke-linecap="round" opacity="0.75"/>
+        <path d="M250 55 L250 445 M55 250 L445 250" stroke="#a08a68" stroke-width="22" stroke-linecap="round" opacity="0.55"/>
+        <path d="M100 100 L400 400 M400 100 L100 400" stroke="#6d5a40" stroke-width="14" stroke-linecap="round" opacity="0.35"/>
+        <!-- Village square -->
+        <circle cx="250" cy="250" r="58" fill="url(#sqGrad)" opacity="0.95"/>
+        <circle cx="250" cy="250" r="44" fill="#8a7860" opacity="0.5"/>
+        <!-- Well -->
+        <circle cx="250" cy="250" r="18" fill="#3d4a5c" stroke="#1e293b" stroke-width="4"/>
+        <circle cx="250" cy="250" r="10" fill="#0f172a"/>
+        <line x1="234" y1="250" x2="266" y2="250" stroke="#cbd5e1" stroke-width="2.5"/>
+        <line x1="250" y1="234" x2="250" y2="266" stroke="#cbd5e1" stroke-width="2.5"/>
+        <!-- Market stalls -->
+        <g opacity="0.85">
+          <rect x="195" y="195" width="22" height="16" rx="2" fill="#c4a574"/>
+          <rect x="195" y="190" width="22" height="6" rx="1" fill="#8b4513"/>
+          <rect x="283" y="195" width="22" height="16" rx="2" fill="#c4a574"/>
+          <rect x="283" y="190" width="22" height="6" rx="1" fill="#8b4513"/>
+          <rect x="195" y="289" width="22" height="16" rx="2" fill="#a08060"/>
+          <rect x="195" y="284" width="22" height="6" rx="1" fill="#6b4423"/>
+        </g>
+        <!-- Decorative houses (non-player, fixed props) -->
+        <g>
+          <rect x="118" y="118" width="28" height="22" rx="2" fill="#d4b896"/><polygon points="116,118 132,102 148,118" fill="#a05030"/>
+          <rect x="354" y="120" width="26" height="20" rx="2" fill="#c9b090"/><polygon points="352,120 367,105 382,120" fill="#8b4030"/>
+          <rect x="120" y="360" width="24" height="20" rx="2" fill="#d0b080"/><polygon points="118,360 132,346 146,360" fill="#9a4535"/>
+          <rect x="356" y="358" width="26" height="22" rx="2" fill="#c8a878"/><polygon points="354,358 369,342 384,358" fill="#8a3a2a"/>
+          <rect x="60" y="230" width="20" height="16" rx="2" fill="#b8a070"/><polygon points="58,230 70,218 82,230" fill="#7a3525"/>
+          <rect x="420" y="232" width="20" height="16" rx="2" fill="#b8a070"/><polygon points="418,232 430,220 442,232" fill="#7a3525"/>
+        </g>
+        <!-- Crop fields -->
+        <g opacity="0.55" stroke="#5a8a4a" stroke-width="1.5" fill="none">
+          <path d="M70 70 L110 70 M70 78 L110 78 M70 86 L110 86"/>
+          <path d="M390 70 L430 70 M390 78 L430 78 M390 86 L430 86"/>
+          <path d="M70 410 L110 410 M70 418 L110 418 M70 426 L110 426"/>
+          <path d="M390 410 L430 410 M390 418 L430 418 M390 426 L430 426"/>
+        </g>
+        <!-- Fences near square -->
+        <path d="M190 210 L190 185 M195 185 L215 185" stroke="#5a4535" stroke-width="2.5" fill="none"/>
+        <path d="M310 210 L310 185 M305 185 L285 185" stroke="#5a4535" stroke-width="2.5" fill="none"/>
+        <path d="M190 290 L190 315 M195 315 L215 315" stroke="#5a4535" stroke-width="2.5" fill="none"/>
+        <path d="M310 290 L310 315 M305 315 L285 315" stroke="#5a4535" stroke-width="2.5" fill="none"/>
+        <!-- Pond -->
+        <ellipse cx="400" cy="300" rx="28" ry="18" fill="#3a6a8a" opacity="0.7"/>
+        <ellipse cx="400" cy="300" rx="18" ry="10" fill="#4a8aaa" opacity="0.4"/>
+        <!-- Sun / moon markers -->
+        <circle cx="420" cy="80" r="20" fill="#ffd75e" opacity="0.85"/>
+        <circle cx="80" cy="90" r="14" fill="#f4f1de" opacity="0.12"/>
+      </svg>`;
+    }
+
+    // Fixed polar positions for up to 16 players around the square
+    function markerPositions(count) {
+      const pos = [];
+      const R = 145;
+      const cx = 250, cy = 250;
+      for (let i = 0; i < count; i++) {
+        const a = -Math.PI / 2 + (i / count) * Math.PI * 2;
+        pos.push({
+          x: cx + Math.cos(a) * R,
+          y: cy + Math.sin(a) * R
+        });
+      }
+      return pos;
+    }
+
+    function spawnVillageLife(wrapEl) {
+      if (!wrapEl || wrapEl.dataset.life === '1') return;
+      wrapEl.dataset.life = '1';
+      const life = document.createElement('div');
+      life.className = 'village-life-layer';
+      life.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:3;';
+      // Smoke from decorative chimneys
+      [[24,24],[72,24],[24,72],[76,72]].forEach(([x,y], i) => {
+        const s = document.createElement('div');
+        s.className = 'v-life v-smoke';
+        s.style.left = x + '%';
+        s.style.top = y + '%';
+        s.style.animationDelay = (i * 0.9) + 's';
+        life.appendChild(s);
+      });
+      // Birds
+      [[15,12],[60,8],[80,18]].forEach(([x,y], i) => {
+        const b = document.createElement('div');
+        b.className = 'v-life v-bird';
+        b.textContent = '🐦';
+        b.style.left = x + '%';
+        b.style.top = y + '%';
+        b.style.animationDelay = (i * 4) + 's';
+        life.appendChild(b);
+      });
+      // Animals
+      [[30,55],[70,60],[55,78]].forEach(([x,y], i) => {
+        const a = document.createElement('div');
+        a.className = 'v-life v-animal';
+        a.textContent = i === 1 ? '🐔' : (i === 2 ? '🐈' : '🐕');
+        a.style.left = x + '%';
+        a.style.top = y + '%';
+        a.style.animationDelay = (i * 2.5) + 's';
+        life.appendChild(a);
+      });
+      // Lanterns along paths
+      [[50,18],[18,50],[82,50],[50,82],[35,35],[65,35],[35,65],[65,65]].forEach(([x,y], i) => {
+        const l = document.createElement('div');
+        l.className = 'v-life v-lantern';
+        l.style.left = x + '%';
+        l.style.top = y + '%';
+        l.style.animationDelay = (i * 0.35) + 's';
+        life.appendChild(l);
+      });
+      wrapEl.appendChild(life);
+    }
+
+    function mountVillage(wrapEl) {
+      if (!wrapEl) return;
+      if (!wrapEl.querySelector('.village-map')) {
+        wrapEl.insertAdjacentHTML('afterbegin', buildVillageSvg());
+      }
+      spawnVillageLife(wrapEl);
+    }
+
+    function setVillageTime(wrapEl, time, cap) {
+      if (!wrapEl) return;
+      if (wrapEl.dataset.time !== time) wrapEl.dataset.time = time;
+      const c = wrapEl.querySelector('.village-cap') || $(wrapEl.id.replace('village', 'village-cap'));
+      const capEl = wrapEl.querySelector('.village-cap');
+      if (capEl) capEl.textContent = cap || '🏡 Village';
+    }
+
+    function renderVillageMarkers(containerId, d, meId, showRoles) {
+      const el = $(containerId);
+      if (!el) return;
+      const ids = Object.keys(playersOf(d));
+      const positions = markerPositions(Math.max(ids.length, 1));
+      const started = d.status === 'playing' || d.status === 'ended';
+      const showAll = d.status === 'ended' || showRoles;
+
+      el.innerHTML = '';
+      ids.forEach((pid, i) => {
+        const p = playersOf(d)[pid];
+        const al = isAlive(d, pid);
+        const def = ROLE_DEFS[p.role] || { icon: '🏠', mapIcon: '🏠', name: p.role };
+        const pos = positions[i] || { x: 200, y: 100 };
+        // Convert SVG coords (400x400) to % of container
+        const left = (pos.x / 500) * 100;
+        const top = (pos.y / 500) * 100;
+
+        const marker = document.createElement('div');
+        marker.className = 'v-marker';
+        if (pid === meId) marker.classList.add('me');
+        if (!al && started) marker.classList.add('dead');
+        if (pid === meId && p.role === 'werewolf') marker.classList.add('wolf-self');
+        if (pid === meId && p.role !== 'villager' && p.role !== 'werewolf') marker.classList.add('role-' + p.role);
+
+        // Icon: self sees own role icon; dead or end show true role; others see house
+        let icon = '🏠';
+        if (pid === meId) icon = def.mapIcon || def.icon;
+        else if (showAll || (!al && started)) icon = def.mapIcon || def.icon;
+        else if (!al) icon = '💀';
+
+        marker.style.left = left + '%';
+        marker.style.top = top + '%';
+        const tipRole = (showAll || (!al && started) || pid === meId)
+          ? (def.icon + ' ' + def.name) : (al ? 'Alive' : 'Dead');
+        marker.innerHTML = `
+          <div class="v-tip"><strong>${esc(p.name)}</strong><br>${tipRole}</div>
+          <div class="v-house">${icon}</div>
+          <div class="v-name">${esc(p.name)}${pid === meId ? ' •' : ''}</div>
+        `;
+        marker.addEventListener('click', (ev) => {
+          ev.stopPropagation();
+          el.querySelectorAll('.v-marker').forEach(m => m.classList.remove('show-tip'));
+          marker.classList.add('show-tip');
+          setTimeout(() => marker.classList.remove('show-tip'), 2500);
+        });
+        el.appendChild(marker);
+      });
+    }
+
+    /* ============================================================
+       SHARED RENDERERS
+       ============================================================ */
+    function renderRolesLeft(el, sumEl, d) {
+      const rc = roleCounts(d);
+      el.innerHTML = ROLE_ORDER.filter(r => rc[r]).map(r => {
+        const { alive: a, total: t } = rc[r];
+        const def = ROLE_DEFS[r];
+        let pips = '';
+        if (t <= 8) for (let i = 0; i < t; i++) pips += `<i class="${i < a ? 'on' : ''}"></i>`;
+        return `<div class="rl-chip ${def.team === 'Werewolf' ? 'wolf' : ''} ${a === 0 ? 'gone' : ''}">
+          <span class="rl-ic">${def.icon}</span><span class="rl-nm">${def.name}</span>
+          <span class="rl-ct">${a}/${t}</span><span class="rl-pips">${pips}</span></div>`;
+      }).join('');
+      if (sumEl) {
+        let wolves = 0, others = 0;
+        Object.entries(playersOf(d)).forEach(([id, p]) => { if (isAlive(d, id)) { if (p.role === 'werewolf') wolves++; else others++; } });
+        sumEl.textContent = `${wolves + others} alive — ${wolves} werewolf${wolves === 1 ? '' : 'ves'} vs ${others} others`;
+      }
+    }
+
+    function renderPlayerRows(el, d, meId) {
+      el.innerHTML = '';
+      const started = d.status === 'playing' || d.status === 'ended';
+      const showAll = d.status === 'ended';
+      Object.entries(playersOf(d)).forEach(([pid, p]) => {
+        const al = isAlive(d, pid);
+        const def = ROLE_DEFS[p.role] || { name: p.role, icon: '' };
+        const item = document.createElement('div');
+        item.className = 'player-item' + (started && !al ? ' dead' : '');
+        let right;
+        if (!started) right = `<span class="pill">Joined</span>`;
+        else if (showAll || !al) right = `<span class="pill ${p.role === 'werewolf' ? 'wolf' : (al ? 'ok' : 'dead')}">${def.icon} ${def.name}</span>`;
+        else right = `<span class="pill ok">Alive</span>`;
+        item.innerHTML = `<span class="name">${esc(p.name)}${pid === meId ? ' <em>(you)</em>' : ''}</span>${right}`;
+        el.appendChild(item);
+      });
+    }
+
+    function renderTally(el, tally) {
+      const list = (tally || []).filter(Boolean);
+      if (!list.length) { el.innerHTML = ''; return false; }
+      const max = Math.max(...list.map(t => t.count));
+      el.innerHTML = list.map(t =>
+        `<div class="tally-row"><span class="tn">${esc(t.name)}</span><span class="tb"><i style="width:${Math.round(t.count / max * 100)}%"></i></span><span class="tc">${t.count}</span></div>`).join('');
+      return true;
+    }
+
+    function renderTargets(el, d, ids, selected, onPick) {
+      const sig = ids.join(',');
+      if (el.dataset.sig !== sig) {
+        el.dataset.sig = sig;
+        el.innerHTML = '';
+        ids.forEach(pid => {
+          const b = document.createElement('button');
+          b.className = 'target-btn';
+          b.dataset.pid = pid;
+          b.textContent = pid === 'skip' ? '🤷 Skip / abstain' : nameOf(d, pid) + (pid === currentPlayerId ? ' (you)' : '');
+          b.addEventListener('click', () => {
+            el.querySelectorAll('.target-btn').forEach(x => x.classList.toggle('selected', x === b));
+            onPick(pid);
+          });
+          el.appendChild(b);
+        });
+      }
+      el.querySelectorAll('.target-btn').forEach(b => b.classList.toggle('selected', b.dataset.pid === selected));
+    }
+
+    /* ---------- reveal hold ---------- */
+    let latestData = null, prevData = null, lastSeq, holdUntil = 0, heldData = null, holdTimer = null, currentRender = null;
+    const revealQueue = []; let revealRunning = false;
+
+    function viewData(d) { return (Date.now() < holdUntil && heldData) ? heldData : d; }
+
+    function trackReveal(d) {
+      const rv = d.reveal;
+      const seq = rv ? rv.seq : null;
+      if (lastSeq === undefined) { lastSeq = seq; return; }
+      if (seq && seq !== lastSeq) {
+        lastSeq = seq;
+        const entries = (rv.entries || []).filter(Boolean);
+        const dur = entries.length * REVEAL_STEP_MS + 600;
+        const now = Date.now();
+        if (now >= holdUntil) { heldData = prevData; holdUntil = now + dur; } else { holdUntil += dur; }
+        clearTimeout(holdTimer);
+        holdTimer = setTimeout(() => {
+          holdUntil = 0; heldData = null;
+          if (currentRender && latestData) currentRender(latestData);
+        }, Math.max(0, holdUntil - now) + 50);
+        if (isPublic) enqueueReveal(rv, d);
+      } else if (seq !== lastSeq) {
+        lastSeq = seq;
+      }
+    }
+    function handleSnapshot(d, render) {
+      latestData = d;
+      currentRender = render;
+      trackReveal(d);
+      render(d);
+      prevData = d;
+    }
+
+    /* ============================================================
+       CREATE ROOM (Narrator)
+       ============================================================ */
+    const DEFAULT_COUNTS = { villager: 4, werewolf: 2, seer: 1, guardian: 1, hunter: 1 };
+    const roleInputs = $('role-inputs');
+    ROLE_ORDER.forEach(key => {
+      const def = ROLE_DEFS[key];
+      const label = document.createElement('label');
+      label.textContent = `${def.icon} ${def.name}`;
+      const input = document.createElement('input');
+      input.type = 'number'; input.min = 0; input.max = 20;
+      input.value = DEFAULT_COUNTS[key] || 0;
+      input.id = `role-${key}`; input.dataset.role = key;
+      input.addEventListener('input', updateRoleTotal);
+      roleInputs.appendChild(label);
+      roleInputs.appendChild(input);
+    });
+    function updateRoleTotal() {
+      let total = 0;
+      document.querySelectorAll('#role-inputs input').forEach(i => total += Math.max(0, parseInt(i.value) || 0));
+      $('role-total').textContent = `Total players: ${total}`;
+    }
+    updateRoleTotal();
+
+    document.querySelectorAll('.tab').forEach(tab => {
+      tab.addEventListener('click', () => {
+        document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+        tab.classList.add('active');
+        $('create-panel').classList.toggle('hidden', tab.dataset.tab !== 'create');
+        $('join-panel').classList.toggle('hidden', tab.dataset.tab !== 'join');
+      });
+    });
+
+    function generateCode() {
+      const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      let code = '';
+      for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+      return code;
+    }
+
+    $('btn-create').addEventListener('click', async () => {
+      if (!checkFirebase()) return;
+      const roles = {};
+      let total = 0;
+      document.querySelectorAll('#role-inputs input').forEach(inp => {
+        const count = Math.max(0, parseInt(inp.value) || 0);
+        if (count > 0) { roles[inp.dataset.role] = count; total += count; }
+      });
+      if (total < 4) { alert("Need at least 4 players."); return; }
+      if (!roles.werewolf) { alert("Need at least 1 Werewolf."); return; }
+      if (roles.werewolf * 2 >= total) { alert("Too many werewolves — they would win instantly. Keep them under half the players."); return; }
+
+      const code = generateCode();
+      await db.ref('rooms/' + code).set({
+        createdAt: Date.now(), config: roles, totalPlayers: total, remaining: { ...roles },
+        players: {}, status: 'lobby', phase: 'lobby', nightNumber: 0, autoAdvance: true
+      });
+      store('ww_host', code);
+      startHost(code);
+    });
+
+    function startHost(code) {
+      currentRoom = code; isHost = true;
+      $('home').classList.add('hidden');
+      $('host-view').classList.remove('hidden');
+      $('host-code').textContent = code;
+      roomRef = db.ref('rooms/' + code);
+      roomRef.on('value', snap => {
+        const d = snap.val();
+        if (!d) {
+          store('ww_host', null);
+          if (!endingRoom) alert("Room deleted.");
+          location.href = location.href.split('?')[0];
+          return;
+        }
+        roomData = d;
+        updateHostUI(d);
+        hostAuto(d);
+      });
+      // Host also watches chat for preview
+      attachChat(code, true);
+    }
+
+    /* ============================================================
+       NARRATOR UI
+       ============================================================ */
+    function nightScript(d) {
+      const cfg = d.config || {};
+      const lines = ['Everyone, close your eyes.', ''];
+      const step = (role, ask) => {
+        if (!cfg[role]) return;
+        const def = ROLE_DEFS[role];
+        const anyAlive = aliveIds(d).some(id => roleOf(d, id) === role && (role !== 'hunter' || bulletsOf(d, id) > 0));
+        lines.push(`${def.icon} ${def.name}${role === 'werewolf' ? 's' : ''}, open your eyes.`, ask, `${def.name}${role === 'werewolf' ? 's' : ''}, close your eyes.`);
+        if (!anyAlive) lines.push('(nobody left in this role — pause a few seconds and stay silent)');
+        lines.push('');
+      };
+      step('werewolf', 'Choose someone to eliminate tonight.');
+      step('seer', 'Choose someone to investigate.');
+      step('guardian', 'Choose someone to protect tonight.');
+      step('hunter', 'Fire your bullet at someone — or hold fire.');
+      lines.push('Everyone, open your eyes when the Narrator resolves the night.');
+      return lines.join('\n');
+    }
+
+    function hostScript(d) {
+      switch (d.phase) {
+        case 'night': return nightScript(d);
+        case 'day': return (d.publicAnnouncement || '') + '\n\n— Let the village discuss, then open voting.';
+        case 'voting': return 'Voting is open. Every living player picks someone to eliminate (or skips) on their phone.\nThe result is revealed when you close the vote.';
+        case 'elimination': return (d.publicAnnouncement || '') + '\n\n— Read the verdict aloud, then send the village to sleep.';
+        case 'hunter': return `${nameOf(d, d.hunterPending)} is the Hunter and is choosing a last shot on their phone.`;
+        case 'ended': return d.winner === 'village' ? '🏆 VILLAGE WINS' : (d.winner === 'werewolf' ? '🐺 WEREWOLVES WIN' : 'Game ended');
+        default: return 'Choose a phase.';
+      }
+    }
+
+    function hostNextInfo(d) {
+      const n = d.nightNumber || 1;
+      switch (d.phase) {
+        case 'night': {
+          const req = requiredActors(d), pend = pendingActors(d);
+          const note = `${req.length - pend.length}/${req.length} night roles have acted` +
+            (!pend.length ? (d.autoAdvance !== false ? ' — resolving automatically…' : ' — ready') : '');
+          return { label: '☀️ Resolve Night', cls: 'btn-warning', note, fn: resolveNight };
+        }
+        case 'day': return { label: '🗳️ Open Voting', cls: 'btn-primary', note: 'Let the village discuss first.', fn: () => hostSetPhase('voting') };
+        case 'voting': {
+          const voters = aliveIds(d), done = voters.filter(id => (d.votes || {})[id]).length;
+          return { label: '⚖️ Close Voting & Reveal', cls: 'btn-warning', note: `${done}/${voters.length} votes in`, fn: resolveVote };
+        }
+        case 'elimination': return { label: `🌙 Start Night ${n + 1}`, cls: 'btn-primary', note: 'Read the verdict, then send the village to sleep.', fn: startNextNight };
+        case 'hunter': return { label: "Skip the Hunter's shot", cls: 'btn-secondary', note: `Waiting for ${nameOf(d, d.hunterPending)}…`, fn: skipHunter };
+        case 'ended': return { label: '🔄 Play Again (reshuffle roles)', cls: 'btn-success', note: 'Same players and role set, new deal.', fn: rematch };
+        default: return null;
+      }
+    }
+
+    function updateHostUI(d) {
+      const players = playersOf(d);
+      const claimed = Object.keys(players).length;
+      const inGame = d.status === 'playing' || d.status === 'ended';
+
+      setScene($('host-scene'), sceneTimeFor(d), sceneCapFor(d));
+      $('host-status').textContent = inGame
+        ? `${aliveIds(d).length} alive of ${claimed}` + (d.nightNumber ? `  •  Night ${d.nightNumber}` : '')
+        : `${claimed} / ${d.totalPlayers} players claimed a role`;
+
+      const playersEl = $('host-players');
+      playersEl.innerHTML = '';
+      Object.entries(players).forEach(([pid, p]) => {
+        const def = ROLE_DEFS[p.role] || { name: p.role, icon: '' };
+        const al = isAlive(d, pid);
+        const item = document.createElement('div');
+        item.className = 'player-item' + (inGame && !al ? ' dead' : '');
+        item.innerHTML = `<span class="name">${esc(p.name)}</span><span class="role-tag">${def.icon} ${def.name}${p.role === 'hunter' && inGame ? ` · ${bulletsOf(d, pid)}🔹` : ''}</span>`;
+        playersEl.appendChild(item);
+      });
+
+      $('host-lobby-only').classList.toggle('hidden', d.status !== 'lobby');
+      const remEl = $('host-remaining');
+      remEl.innerHTML = '';
+      const rem = d.remaining || {};
+      ROLE_ORDER.forEach(key => {
+        if (d.config && d.config[key]) {
+          const left = rem[key] || 0;
+          const badge = document.createElement('span');
+          badge.className = 'badge' + (left === 0 ? ' empty' : '');
+          badge.textContent = `${ROLE_DEFS[key].icon} ${ROLE_DEFS[key].name}: ${left}/${d.config[key]}`;
+          remEl.appendChild(badge);
+        }
+      });
+      $('btn-start-game').disabled = !(claimed >= 4 && claimed === d.totalPlayers && d.status === 'lobby');
+
+      const gameEl = $('host-game');
+      gameEl.classList.toggle('hidden', !inGame);
+      if (!inGame) return;
+
+      $('phase-label').textContent = `Phase: ${d.phase}  •  Night ${d.nightNumber || 0}`;
+      $('auto-advance').checked = d.autoAdvance !== false;
+
+      const nx = hostNextInfo(d);
+      const nextBtn = $('btn-next');
+      if (nx) {
+        nextBtn.className = 'btn btn-lg ' + nx.cls;
+        nextBtn.textContent = nx.label;
+        $('next-note').textContent = nx.note;
+        nextFn = nx.fn;
+      }
+
+      const w = d.status === 'playing' ? currentWinner(d) : null;
+      const hint = $('win-hint');
+      if (w) {
+        hint.classList.remove('hidden');
+        hint.innerHTML = `⚠️ ${w === 'village' ? 'Village' : 'Werewolves'} met the win condition. <button class="btn btn-sm btn-success" data-win="${w}">End game</button>`;
+      } else hint.classList.add('hidden');
+
+      renderRolesLeft($('host-roles'), $('host-roles-sum'), d);
+      $('script-box').textContent = hostScript(d);
+
+      const lnWrap = $('host-lastnight-wrap');
+      if (d.hostNightNotes && d.phase !== 'night') {
+        lnWrap.classList.remove('hidden');
+        $('host-lastnight').textContent = d.hostNightNotes;
+      } else lnWrap.classList.add('hidden');
+
+      renderHostActions(d);
+      renderHostAlive(d);
+      renderHostVotes(d);
+    }
+
+    function renderHostActions(d) {
+      const el = $('host-actions');
+      if (d.phase === 'hunter') {
+        el.innerHTML = `<div style="margin:6px 0;font-size:0.9rem;">🏹 Waiting for <strong>${esc(nameOf(d, d.hunterPending))}</strong> to choose a last shot…</div>`;
+        return;
+      }
+      if (d.phase !== 'night') { el.innerHTML = `<p class="muted">Night actions show up here during the night.</p>`; return; }
+      const req = requiredActors(d);
+      el.innerHTML = req.map(id => {
+        const role = roleOf(d, id), def = ROLE_DEFS[role];
+        const t = actOf(d, def.act, id);
+        const what = t ? (t === 'hold' ? 'held fire' : '→ <strong>' + esc(nameOf(d, t)) + '</strong>') : '<span class="muted">waiting…</span>';
+        return `<div style="margin:6px 0;font-size:0.9rem;">${def.icon} <strong>${esc(nameOf(d, id))}</strong> <span class="muted">(${def.name})</span> ${what}</div>`;
+      }).join('') || `<p class="muted">Nobody has a night action.</p>`;
+    }
+
+    function renderHostAlive(d) {
+      const el = $('host-alive-list');
+      el.innerHTML = '';
+      Object.entries(playersOf(d)).forEach(([pid, p]) => {
+        const al = isAlive(d, pid);
+        const item = document.createElement('div');
+        item.className = 'player-item' + (al ? '' : ' dead');
+        item.innerHTML = `<span class="name">${esc(p.name)} ${al ? '' : '(dead)'}</span>
+          <button class="btn btn-sm ${al ? 'btn-danger' : 'btn-secondary'}" data-kill="${pid}">${al ? 'Kill' : 'Revive'}</button>`;
+        el.appendChild(item);
+      });
+      el.querySelectorAll('[data-kill]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const pid = btn.dataset.kill;
+          await db.ref(`rooms/${currentRoom}/alive/${pid}`).set(!isAlive(roomData, pid));
+        });
+      });
+    }
+
+    function renderHostVotes(d) {
+      const el = $('host-votes');
+      const votes = d.votes || {};
+      if (!Object.keys(votes).length) { el.innerHTML = `<p class="muted">${d.phase === 'voting' ? 'No votes yet.' : 'No active vote.'}</p>`; return; }
+      const tally = {};
+      Object.values(votes).forEach(t => { tally[t] = (tally[t] || 0) + 1; });
+      const sorted = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+      let html = sorted.map(([tid, c]) =>
+        `<div style="margin:4px 0;">${tid === 'skip' ? '🤷 Skip' : esc(nameOf(d, tid))}: <strong>${c}</strong></div>`).join('');
+      html += `<div class="muted" style="margin-top:6px;">` +
+        Object.entries(votes).map(([vid, t]) => `${esc(nameOf(d, vid))} → ${t === 'skip' ? 'skip' : esc(nameOf(d, t))}`).join(' · ') + `</div>`;
+      el.innerHTML = html;
+    }
+
+    /* ---------- Narrator actions ---------- */
+    async function commit(upd) {
+      busy = true;
+      try { await db.ref('rooms/' + currentRoom).update(upd); }
+      catch (e) { alert("Update failed: " + e.message); }
+      finally { busy = false; }
+    }
+    async function resolveNight() {
+      if (busy || !roomData || roomData.phase !== 'night') return;
+      await commit(planNight(roomData).upd);
+    }
+    async function resolveVote() {
+      if (busy || !roomData || roomData.phase !== 'voting') return;
+      await commit(planVote(roomData).upd);
+    }
+    async function processHunterShot() {
+      if (busy || !roomData || roomData.phase !== 'hunter') return;
+      const plan = planHunterShot(roomData);
+      if (plan) await commit(plan.upd);
+    }
+    async function skipHunter() {
+      const hid = roomData.hunterPending;
+      if (!hid) return;
+      await db.ref(`rooms/${currentRoom}/actions/hunterFinal/${hid}`).set('none');
+    }
+    async function startNextNight() {
+      if (busy || !roomData || roomData.phase !== 'elimination') return;
+      await commit(planNextNight(roomData));
+    }
+    async function hostSetPhase(p) {
+      const d = roomData;
+      if (!d) return;
+      if (p === 'night') {
+        if (d.phase === 'night') return;
+        await commit(planNextNight(d));
+      } else if (p === 'day') {
+        await commit({ phase: 'day', votes: null, publicAnnouncement: `☀️ Day ${d.nightNumber || 1}\n\nDiscuss and find the werewolves.` });
+      } else if (p === 'voting') {
+        await commit({ phase: 'voting', votes: null, voteTally: null, publicAnnouncement: '🗳️ Voting is open.' });
+      }
+    }
+    async function rematch() {
+      if (!roomData || roomData.phase !== 'ended') return;
+      if (!confirm("Start a new game with the same players? Roles will be reshuffled.")) return;
+      await commit(planStart(roomData, true));
+    }
+
+    let autoTimer = null, autoSig = '';
+    function hostAuto(d) {
+      if (d.phase === 'hunter') { processHunterShot(); return; }
+      let ready = false, delay = 3500;
+      if (d.status === 'playing' && d.autoAdvance !== false) {
+        if (d.phase === 'night') {
+          ready = requiredActors(d).length > 0 && pendingActors(d).length === 0;
+        } else if (d.phase === 'voting') {
+          const voters = aliveIds(d);
+          ready = voters.length > 0 && voters.every(id => (d.votes || {})[id]);
+          delay = 2500;
+        }
+      }
+      if (!ready) { clearTimeout(autoTimer); autoSig = ''; return; }
+      const sig = `${d.phase}|${d.nightNumber}|${JSON.stringify(d.actions || {})}|${JSON.stringify(d.votes || {})}`;
+      if (sig === autoSig) return;
+      clearTimeout(autoTimer);
+      autoSig = sig;
+      autoTimer = setTimeout(() => {
+        autoSig = '';
+        if (!roomData || roomData.autoAdvance === false) return;
+        if (roomData.phase === 'night' && pendingActors(roomData).length === 0) resolveNight();
+        else if (roomData.phase === 'voting' && aliveIds(roomData).every(id => (roomData.votes || {})[id])) resolveVote();
+      }, delay);
+    }
+
+    $('btn-next').addEventListener('click', () => { if (nextFn) nextFn(); });
+    $('auto-advance').addEventListener('change', e => db.ref(`rooms/${currentRoom}/autoAdvance`).set(e.target.checked));
+    $('win-hint').addEventListener('click', e => {
+      const b = e.target.closest('[data-win]');
+      if (b) declareWinner(b.dataset.win);
+    });
+    $('btn-start-game').addEventListener('click', async () => {
+      if (!currentRoom || !roomData) return;
+      await commit(planStart(roomData, false));
+    });
+    $('btn-phase-night').addEventListener('click', () => hostSetPhase('night'));
+    $('btn-phase-day').addEventListener('click', () => hostSetPhase('day'));
+    $('btn-phase-vote').addEventListener('click', () => hostSetPhase('voting'));
+    $('btn-clear-votes').addEventListener('click', () => db.ref(`rooms/${currentRoom}/votes`).set(null));
+    $('btn-open-public').addEventListener('click', () => {
+      window.open(location.href.split('?')[0] + '?public=' + currentRoom, '_blank');
+    });
+    async function declareWinner(w) {
+      if (!confirm(`Declare ${w === 'village' ? 'Village' : 'Werewolves'} as winner?`)) return;
+      await commit({
+        status: 'ended', phase: 'ended', winner: w, hunterPending: null, hunterQueue: null,
+        publicAnnouncement: w === 'village'
+          ? '🏆 VILLAGE WINS!\n\nAll werewolves have been eliminated.'
+          : '🐺 WEREWOLVES WIN!\n\nThe wolves have taken over the village.'
+      });
+    }
+    $('btn-win-village').addEventListener('click', () => declareWinner('village'));
+    $('btn-win-wolves').addEventListener('click', () => declareWinner('werewolf'));
+    $('btn-copy').addEventListener('click', () => {
+      const url = location.href.split('?')[0] + '?room=' + currentRoom;
+      navigator.clipboard.writeText(url).then(() => alert("Invite link copied!\n" + url)).catch(() => prompt("Copy:", url));
+    });
+    $('btn-end').addEventListener('click', async () => {
+      if (!confirm("Delete this room?")) return;
+      endingRoom = true;
+      store('ww_host', null);
+      await db.ref('rooms/' + currentRoom).remove();
+      location.href = location.href.split('?')[0];
+    });
+
+    /* ============================================================
+       JOIN & CLAIM (Players)
+       ============================================================ */
+    $('btn-join').addEventListener('click', async () => {
+      if (!checkFirebase()) return;
+      const code = $('join-code').value.trim().toUpperCase();
+      const name = $('join-name').value.trim();
+      if (!code || code.length < 4) { alert("Enter room code."); return; }
+      if (!name) { alert("Enter your name."); return; }
+
+      const ref = db.ref('rooms/' + code);
+      let snap;
+      try { snap = await ref.once('value'); } catch (e) { alert("Cannot read room: " + e.message); return; }
+      if (!snap.exists()) { alert("Room not found."); return; }
+      const data = snap.val();
+      const existing = Object.entries(data.players || {}).find(([, p]) => p.name.toLowerCase() === name.toLowerCase());
+
+      if (data.status === 'lobby') {
+        if (existing) {
+          const saved = load('ww_player');
+          const mine = saved && saved.room === code && saved.pid === existing[0];
+          if (mine || confirm(`"${existing[1].name}" has already joined this room.\n\nOK = that's me, take me back to my seat.\nCancel = I'm someone else (pick a different name).`)) {
+            enterPlayer(code, existing[0], name);
+          }
+          return;
+        }
+        let roleToGive = null;
+        let res;
+        try {
+          res = await ref.child('remaining').transaction(cur => {
+            if (cur === null) return cur;
+            const candidates = [];
+            Object.entries(cur).forEach(([r, c]) => { for (let i = 0; i < c; i++) candidates.push(r); });
+            if (!candidates.length) { roleToGive = null; return; }
+            roleToGive = candidates[Math.floor(Math.random() * candidates.length)];
+            const next = { ...cur };
+            next[roleToGive] = (next[roleToGive] || 0) - 1;
+            if (next[roleToGive] <= 0) delete next[roleToGive];
+            return Object.keys(next).length ? next : null;
+          });
+        } catch (err) { alert("Claim failed: " + (err.message || err)); return; }
+        if (!res.committed || !roleToGive) { alert("All roles claimed!"); return; }
+
+        const pid = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+        try {
+          await ref.child('players/' + pid).set({ name, role: roleToGive, claimedAt: Date.now() });
+        } catch (err) { alert("Claim failed: " + (err.message || err)); return; }
+        enterPlayer(code, pid, name);
+      } else {
+        if (!existing) { alert("Game already started and your name was not found. Ask the Narrator."); return; }
+        enterPlayer(code, existing[0], name);
+      }
+    });
+
+    function enterPlayer(code, pid, name) {
+      currentRoom = code; currentPlayerId = pid;
+      store('ww_player', { room: code, pid, name });
+      $('home').classList.add('hidden');
+      document.querySelector('h1').classList.add('hidden');
+      document.querySelector('.subtitle').classList.add('hidden');
+      document.querySelector('.footer')?.classList.add('hidden');
+      const pv = $('player-view');
+      pv.classList.remove('hidden');
+      pv.classList.add('play-mode');
+      mountVillage($('player-village'));
+      roomRef = db.ref('rooms/' + code);
+      roomRef.on('value', snap => {
+        const d = snap.val();
+        if (!d) { store('ww_player', null); alert("The room was closed."); location.href = location.href.split('?')[0]; return; }
+        roomData = d;
+        handleSnapshot(d, updatePlayerUI);
+      });
+      attachChat(code, false);
+    }
+
+    $('role-reveal-box').addEventListener('click', () => $('role-reveal-box').classList.toggle('masked'));
+    $('btn-leave').addEventListener('click', () => { store('ww_player', null); location.href = location.href.split('?')[0]; });
+
+    /* ============================================================
+       PLAYER UI
+       ============================================================ */
+    let shownRole = null;
+    function updatePlayerUI(dLive) {
+      const d = viewData(dLive);
+      const me = playersOf(d)[currentPlayerId];
+      const phaseEl = $('player-phase');
+      if (!me) { phaseEl.textContent = 'You are not in this room anymore.'; phaseEl.style.borderColor = 'rgba(239,68,68,0.6)'; return; }
+
+      const role = me.role, def = ROLE_DEFS[role];
+      const inGame = d.status === 'playing' || d.status === 'ended';
+      const meAlive = isAlive(d, currentPlayerId);
+
+      // Role card
+      if (shownRole !== role) {
+        shownRole = role;
+        $('p-icon').textContent = def.icon;
+        $('p-role').textContent = def.name;
+        $('p-team').textContent = def.team + ' Team';
+        $('p-desc').textContent = def.desc;
+        const box = $('role-reveal-box');
+        box.classList.remove('masked');
+        box.style.background = def.team === 'Werewolf' ? 'linear-gradient(135deg, #450a0a, #7f1d1d)' : 'linear-gradient(135deg, #2e1065, #4c1d95)';
+        box.style.borderColor = def.team === 'Werewolf' ? '#ef4444' : '#7c3aed';
+      }
+      if (role === 'werewolf') {
+        const pack = Object.entries(playersOf(d)).filter(([id, p]) => p.role === 'werewolf' && id !== currentPlayerId)
+          .map(([id, p]) => isAlive(d, id) ? esc(p.name) : `<s>${esc(p.name)}</s>`);
+        $('p-extra').innerHTML = pack.length ? '🐺 Your pack: ' + pack.join(', ') : '🐺 You are the lone wolf.';
+      } else if (role === 'hunter' && inGame) {
+        $('p-extra').textContent = bulletsOf(d, currentPlayerId) > 0 ? '🔹 Bullet loaded' : '⚪ Bullet spent';
+      } else $('p-extra').textContent = '';
+
+      // Village map
+      setVillageTime($('player-village'), sceneTimeFor(d), sceneCapFor(d));
+      renderVillageMarkers('player-markers', d, currentPlayerId, false);
+
+
+      // Reset selections when step changes
+      const ctx = `${d.phase}|${d.nightNumber}|${d.hunterPending || ''}`;
+      if (ctx !== pickCtx) {
+        pickCtx = ctx; selectedTarget = selectedVote = selectedHunter = null; editingAction = editingVote = false;
+        ['target-list', 'vote-list', 'hunter-list'].forEach(id => { const e = $(id); if (e) delete e.dataset.sig; });
+      }
+
+      ['player-action', 'player-vote', 'player-hunter', 'player-end', 'seer-log'].forEach(id => $(id).classList.add('hidden'));
+      $('player-role-section').classList.remove('hidden');
+      const idleHint = $('action-idle-hint');
+      if (idleHint) idleHint.classList.remove('hidden');
+      updateActionDuty(false);
+
+      const n = d.nightNumber || 0;
+      const texts = {
+        lobby: ['Waiting for the Narrator to start...', 'info'],
+        night: [meAlive ? `🌙 Night ${n} — keep your eyes closed until you're called.` : `🌙 Night ${n} — you are dead. Stay quiet.`, 'info'],
+        day: [`☀️ Day ${n} — discuss who the werewolves are.`, 'success'],
+        voting: [`🗳️ Day ${n} — voting is open.`, 'warning'],
+        elimination: [`⚖️ Day ${n} — the verdict is in.`, 'warning'],
+        hunter: ['🏹 The Hunter is taking a last shot...', 'warning']
+      };
+      const t = texts[d.phase] || ['', 'info'];
+      phaseEl.textContent = t[0] + (!meAlive && inGame && d.phase !== 'night' && d.phase !== 'ended' ? '  (You are dead)' : '');
+      phaseEl.style.borderColor = t[1] === 'success' ? 'rgba(34,197,94,0.45)' : (t[1] === 'warning' ? 'rgba(245,158,11,0.5)' : (t[1] === 'error' ? 'rgba(239,68,68,0.5)' : 'rgba(139,92,246,0.35)'));
+
+      // Chat lock during night
+      updateChatLock(d);
+
+      const ann = $('player-announce');
+      if (['day', 'elimination', 'hunter'].includes(d.phase) && d.publicAnnouncement) {
+        ann.textContent = d.publicAnnouncement; ann.classList.remove('hidden');
+      } else ann.classList.add('hidden');
+
+      // Status drawer content
+      if (inGame) renderRolesLeft($('player-roles'), $('player-roles-sum'), d);
+      renderPlayerRows($('player-list'), d, currentPlayerId);
+      $('status-phase-text').textContent = sceneCapFor(d) + (meAlive ? '' : ' · You are dead');
+
+      if (role === 'seer') {
+        const log = Object.entries((d.seerLog || {})[currentPlayerId] || {})
+          .map(([k, v]) => ({ n: parseInt(k.replace(/\D/g, '')) || 0, v })).sort((a, b) => b.n - a.n);
+        if (log.length) {
+          $('seer-log').classList.remove('hidden');
+          $('seer-log-list').innerHTML = log.map(({ n: nn, v }) =>
+            `<div class="seer-line"><span>Night ${nn}: ${esc(v.targetName)}</span><strong style="color:${v.isWerewolf ? '#fca5a5' : '#86efac'}">${v.isWerewolf ? '🐺 Werewolf' : 'Not a werewolf'}</strong></div>`).join('');
+        }
+      }
+
+      if (d.status === 'ended' || d.phase === 'ended') {
+        $('player-role-section').classList.add('hidden');
+        $('player-end').classList.remove('hidden');
+        const won = d.winner === (def.team === 'Werewolf' ? 'werewolf' : 'village');
+        $('end-team').textContent = def.icon + ' ' + def.name + ' · ' + def.team + ' Team';
+        $('end-title').textContent = won ? 'YOU WIN!' : 'YOU LOSE';
+        $('end-msg').textContent = d.winner === 'village' ? 'The Village eliminated all werewolves.' : 'The Werewolves overran the village.';
+        const box = $('end-box');
+        box.style.background = won ? 'linear-gradient(135deg, #14532d, #166534)' : 'linear-gradient(135deg, #450a0a, #7f1d1d)';
+        box.style.borderColor = won ? '#22c55e' : '#ef4444';
+        phaseEl.textContent = 'Game Over — waiting for the Narrator to replay';
+        phaseEl.style.borderColor = won ? 'rgba(34,197,94,0.55)' : 'rgba(239,68,68,0.55)';
+        // On end, show all roles on map
+        renderVillageMarkers('player-markers', d, currentPlayerId, true);
+        return;
+      }
+
+      if (d.phase === 'hunter' && d.hunterPending === currentPlayerId) {
+        $('player-hunter').classList.remove('hidden');
+        if ($('action-idle-hint')) $('action-idle-hint').classList.add('hidden');
+        updateActionDuty(true);
+        const already = actOf(d, 'hunterFinal', currentPlayerId);
+        $('hunter-done').classList.toggle('hidden', !already);
+        ['btn-hunter-fire', 'btn-hunter-none', 'hunter-list'].forEach(id => $(id).classList.toggle('hidden', !!already));
+        if (!already) {
+          const ids = aliveIds(d);
+          renderTargets($('hunter-list'), d, ids, selectedHunter, pid => { selectedHunter = pid; $('btn-hunter-fire').disabled = false; });
+          $('btn-hunter-fire').disabled = !selectedHunter;
+        }
+        return;
+      }
+      if (!meAlive) return;
+
+      if (d.phase === 'night' && requiredActors(d).includes(currentPlayerId)) renderNightAction(d, role, def);
+
+      if (d.phase === 'voting') {
+        $('player-vote').classList.remove('hidden');
+        if ($('action-idle-hint')) $('action-idle-hint').classList.add('hidden');
+        updateActionDuty(!(d.votes || {})[currentPlayerId] || editingVote);
+        const mine = (d.votes || {})[currentPlayerId];
+        const locked = mine && !editingVote;
+        $('vote-done').classList.toggle('hidden', !locked);
+        $('btn-change-vote').classList.toggle('hidden', !locked);
+        ['vote-list', 'btn-submit-vote'].forEach(id => $(id).classList.toggle('hidden', !!locked));
+        if (locked) {
+          $('vote-done').textContent = 'Vote locked in: ' + (mine === 'skip' ? 'skip' : nameOf(d, mine)) + ' ✓';
+        } else {
+          const ids = aliveIds(d).filter(x => x !== currentPlayerId).concat('skip');
+          renderTargets($('vote-list'), d, ids, selectedVote, pid => { selectedVote = pid; $('btn-submit-vote').disabled = false; });
+          $('btn-submit-vote').disabled = !selectedVote;
+        }
+      }
+    }
+
+    function renderNightAction(d, role, def) {
+      const key = def.act;
+      const mine = actOf(d, key, currentPlayerId);
+      const locked = mine && !editingAction;
+      $('player-action').classList.remove('hidden');
+      if ($('action-idle-hint')) $('action-idle-hint').classList.add('hidden');
+      updateActionDuty(true);
+
+      const titles = {
+        werewolf: ['🐺 Choose your victim', 'The pack votes — most votes wins, ties are random. You can change your pick until the Narrator resolves the night.'],
+        seer: ['🔮 Investigate someone', 'You will learn whether they are a Werewolf when morning comes.'],
+        guardian: ['🛡️ Protect someone', 'They survive any night attack. You may pick yourself.'],
+        hunter: ['🏹 Fire your bullet?', 'You have one bullet for the whole game. Shoot someone tonight — or hold fire.']
+      };
+      $('action-title').textContent = titles[role][0];
+      let hint = titles[role][1];
+      if (role === 'guardian' && (d.guardianLast || {})[currentPlayerId]) hint += ` You can't pick ${nameOf(d, d.guardianLast[currentPlayerId])} again — you shielded them last night.`;
+      $('action-hint').textContent = hint;
+
+      const packEl = $('pack-info');
+      if (role === 'werewolf') {
+        packEl.innerHTML = '🐺 Pack: ' + aliveIds(d).filter(id => isWolf(d, id)).map(id => {
+          const t = actOf(d, 'wolf', id);
+          return `${esc(nameOf(d, id))}${id === currentPlayerId ? ' (you)' : ''} ${t ? '→ <strong>' + esc(nameOf(d, t)) + '</strong>' : '<em>deciding…</em>'}`;
+        }).join(' · ');
+      } else packEl.textContent = '';
+
+      $('action-done').classList.toggle('hidden', !locked);
+      $('btn-change-action').classList.toggle('hidden', !locked);
+      ['target-list', 'btn-submit-action'].forEach(id => $(id).classList.toggle('hidden', !!locked));
+      $('btn-hold-fire').classList.toggle('hidden', !(role === 'hunter' && !locked));
+      if (locked) {
+        $('action-done').textContent = mine === 'hold' ? 'You are holding fire tonight ✓' : 'Locked in: ' + nameOf(d, mine) + ' ✓';
+      } else {
+        renderTargets($('target-list'), d, validTargets(d, currentPlayerId), selectedTarget, pid => {
+          selectedTarget = pid; $('btn-submit-action').disabled = false;
+        });
+        $('btn-submit-action').disabled = !selectedTarget;
+      }
+    }
+
+    async function writeAction(path, value) {
+      try { await db.ref(`rooms/${currentRoom}/${path}`).set(value); }
+      catch (e) { alert("Failed to submit: " + e.message); }
+    }
+    $('btn-submit-action').addEventListener('click', async () => {
+      if (!selectedTarget || !roomData) return;
+      const def = ROLE_DEFS[shownRole];
+      editingAction = false;
+      await writeAction(`actions/${def.act}/${currentPlayerId}`, selectedTarget);
+    });
+    $('btn-hold-fire').addEventListener('click', async () => {
+      editingAction = false;
+      await writeAction(`actions/hunter/${currentPlayerId}`, 'hold');
+    });
+    $('btn-change-action').addEventListener('click', () => { editingAction = true; delete $('target-list').dataset.sig; selectedTarget = null; if (latestData) updatePlayerUI(latestData); });
+    $('btn-submit-vote').addEventListener('click', async () => {
+      if (!selectedVote) return;
+      editingVote = false;
+      await writeAction(`votes/${currentPlayerId}`, selectedVote);
+    });
+    $('btn-change-vote').addEventListener('click', () => { editingVote = true; delete $('vote-list').dataset.sig; selectedVote = null; if (latestData) updatePlayerUI(latestData); });
+    $('btn-hunter-fire').addEventListener('click', async () => {
+      if (!selectedHunter) return;
+      await writeAction(`actions/hunterFinal/${currentPlayerId}`, selectedHunter);
+    });
+    $('btn-hunter-none').addEventListener('click', async () => {
+      await writeAction(`actions/hunterFinal/${currentPlayerId}`, 'none');
+    });
+
+    /* ============================================================
+       STATUS DRAWER
+       ============================================================ */
+    let lastDutyCtx = '';
+    function updateActionDuty(on) {
+      const btn = $('btn-action-menu');
+      if (!btn) return;
+      btn.classList.toggle('has-duty', !!on);
+      // Soft-open the action menu when a new duty appears
+      if (on && pickCtx && pickCtx !== lastDutyCtx) {
+        lastDutyCtx = pickCtx;
+        openAction();
+      }
+      if (!on) lastDutyCtx = pickCtx || lastDutyCtx;
+    }
+    function openStatus() { $('status-drawer')?.classList.add('open'); }
+    function closeStatus() { $('status-drawer')?.classList.remove('open'); }
+    function openAction() { $('action-drawer')?.classList.add('open'); }
+    function closeAction() { $('action-drawer')?.classList.remove('open'); }
+
+    $('btn-status')?.addEventListener('click', openStatus);
+    $('btn-status-close')?.addEventListener('click', closeStatus);
+    $('status-drawer')?.addEventListener('click', e => {
+      if (e.target === $('status-drawer')) closeStatus();
+    });
+    $('btn-action-menu')?.addEventListener('click', openAction);
+    $('btn-action-close')?.addEventListener('click', closeAction);
+    $('action-drawer')?.addEventListener('click', e => {
+      if (e.target === $('action-drawer')) closeAction();
+    });
+    document.addEventListener('keydown', e => {
+      if (e.key === 'Escape') {
+        if ($('chat-drawer')?.classList.contains('open')) {
+          $('chat-drawer').classList.remove('open'); chatOpen = false;
+        } else if ($('action-drawer')?.classList.contains('open')) {
+          closeAction();
+        } else if ($('status-drawer')?.classList.contains('open')) {
+          closeStatus();
+        } else {
+          openStatus();
+        }
+      }
+    });
+
+    /* ============================================================
+       CHAT / DISCUSSION
+       ============================================================ */
+    function attachChat(code, hostPreview) {
+      if (chatRef) { try { chatRef.off(); } catch (e) {} }
+      chatRef = db.ref('rooms/' + code + '/chat');
+      chatRef.limitToLast(80).on('value', snap => {
+        const msgs = [];
+        snap.forEach(c => { msgs.push({ id: c.key, ...c.val() }); });
+        msgs.sort((a, b) => (a.ts || 0) - (b.ts || 0));
+        renderChat(msgs, hostPreview);
+        // New message badge
+        if (!chatOpen && msgs.length) {
+          const last = msgs[msgs.length - 1];
+          if (last.ts > lastChatSeen && last.pid !== currentPlayerId) {
+            $('btn-chat')?.classList.add('has-new');
+          }
+        }
+        if (msgs.length) lastChatSeen = Math.max(lastChatSeen, ...msgs.map(m => m.ts || 0));
+      });
+    }
+
+    function renderChat(msgs, hostPreview) {
+      const box = $('chat-messages');
+      if (box) {
+        box.innerHTML = msgs.map(m => {
+          if (m.system) return `<div class="chat-msg system">${esc(m.text)}</div>`;
+          const mine = m.pid === currentPlayerId;
+          return `<div class="chat-msg ${mine ? 'mine' : ''}"><div class="cm-name">${esc(m.name || 'Player')}</div><div class="cm-text">${esc(m.text)}</div></div>`;
+        }).join('') || '<div class="chat-msg system">No messages yet. Discuss who the wolves are!</div>';
+        box.scrollTop = box.scrollHeight;
+      }
+      // Host preview
+      const prev = $('host-chat-preview');
+      if (prev && hostPreview) {
+        const recent = msgs.slice(-8);
+        prev.innerHTML = recent.length
+          ? recent.map(m => m.system ? `<div class="muted">${esc(m.text)}</div>` : `<div><strong>${esc(m.name)}</strong>: ${esc(m.text)}</div>`).join('')
+          : 'No messages yet.';
+      }
+    }
+
+    function updateChatLock(d) {
+      const night = d.phase === 'night';
+      const dead = currentPlayerId && !isAlive(d, currentPlayerId);
+      const locked = night || (d.status !== 'playing' && d.status !== 'ended' && d.phase !== 'lobby');
+      // Allow chat in lobby, day, voting, elimination, ended; lock at night
+      // Dead players can still chat during day (ghost chat optional — allow)
+      const canChat = !night && (d.status === 'playing' || d.status === 'ended' || d.phase === 'lobby');
+      $('chat-input-row')?.classList.toggle('hidden', !canChat);
+      $('chat-locked')?.classList.toggle('hidden', canChat);
+    }
+
+    async function sendChat() {
+      const input = $('chat-input');
+      const text = (input.value || '').trim();
+      if (!text || !currentRoom || !currentPlayerId) return;
+      const me = playersOf(roomData || {})[currentPlayerId];
+      if (!me) return;
+      input.value = '';
+      try {
+        await db.ref('rooms/' + currentRoom + '/chat').push({
+          pid: currentPlayerId,
+          name: me.name,
+          text: text.slice(0, 200),
+          ts: Date.now()
+        });
+      } catch (e) { alert('Chat failed: ' + e.message); }
+    }
+
+    $('btn-chat')?.addEventListener('click', () => {
+      $('chat-drawer').classList.add('open');
+      chatOpen = true;
+      $('btn-chat').classList.remove('has-new');
+      setTimeout(() => { const b = $('chat-messages'); if (b) b.scrollTop = b.scrollHeight; }, 50);
+    });
+    $('btn-chat-close')?.addEventListener('click', () => {
+      $('chat-drawer').classList.remove('open');
+      chatOpen = false;
+    });
+    $('chat-drawer')?.addEventListener('click', e => {
+      if (e.target === $('chat-drawer')) {
+        $('chat-drawer').classList.remove('open');
+        chatOpen = false;
+      }
+    });
+    $('btn-chat-send')?.addEventListener('click', sendChat);
+    $('chat-input')?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') { e.preventDefault(); sendChat(); }
+    });
+
+    /* ============================================================
+       PUBLIC / PROJECTOR SCREEN
+       ============================================================ */
+    function startPublic(code) {
+      isPublic = true; currentRoom = code;
+      $('home').classList.add('hidden');
+      document.querySelector('.footer').classList.add('hidden');
+      document.querySelector('h1').classList.add('hidden');
+      document.querySelector('.subtitle').classList.add('hidden');
+      $('public-view').classList.remove('hidden');
+      $('public-code').textContent = code;
+      mountVillage($('public-village'));
+      db.ref('rooms/' + code).on('value', snap => {
+        const d = snap.val();
+        if (!d) { $('public-phase').textContent = 'Room not found'; return; }
+        roomData = d;
+        handleSnapshot(d, updatePublicUI);
+      });
+    }
+
+    function updatePublicUI(dLive) {
+      const d = viewData(dLive);
+      const phase = d.phase || 'lobby';
+      const inGame = d.status === 'playing' || d.status === 'ended';
+      setScene($('public-scene'), sceneTimeFor(d), sceneCapFor(d));
+      setVillageTime($('public-village'), sceneTimeFor(d), sceneCapFor(d));
+      renderVillageMarkers('public-markers', d, null, d.status === 'ended');
+
+      const labels = {
+        lobby: 'Waiting for players...',
+        night: `🌙 Night ${d.nightNumber || ''} — everyone, close your eyes`,
+        day: `☀️ Day ${d.nightNumber || ''}`,
+        voting: `🗳️ Voting — Day ${d.nightNumber || ''}`,
+        elimination: `⚖️ Verdict — Day ${d.nightNumber || ''}`,
+        hunter: '🏹 The Hunter takes a last shot',
+        ended: d.winner === 'village' ? '🏆 VILLAGE WINS' : '🐺 WEREWOLVES WIN'
+      };
+      $('public-phase').textContent = labels[phase] || phase;
+
+      const lobby = $('public-lobby');
+      lobby.classList.toggle('hidden', phase !== 'lobby');
+      if (phase === 'lobby') {
+        $('public-bigcode').textContent = currentRoom;
+        $('public-joinurl').textContent = location.href.split('?')[0] + '?room=' + currentRoom;
+      }
+
+      let script = d.publicAnnouncement;
+      if (phase === 'lobby') script = `${Object.keys(playersOf(d)).length} / ${d.totalPlayers || '?'} players have joined.`;
+      else if (phase === 'night') script = d.publicAnnouncement || 'Night has fallen. Everyone close your eyes...';
+      else if (phase === 'voting') {
+        const voters = aliveIds(d);
+        script = `Voting is open — choose who to eliminate on your phone.\n\n${voters.filter(id => (d.votes || {})[id]).length} / ${voters.length} votes in.`;
+      }
+      $('public-script').textContent = script || 'Waiting for Narrator...';
+
+      $('public-roles-wrap').classList.toggle('hidden', !inGame);
+      if (inGame) renderRolesLeft($('public-roles'), $('public-roles-sum'), d);
+
+      const showTally = phase === 'elimination' || (phase === 'hunter' && d.voteTally);
+      $('public-tally-wrap').classList.toggle('hidden', !(showTally && renderTally($('public-tally'), d.voteTally)));
+
+      renderPlayerRows($('public-players'), d, null);
+
+      const winEl = $('public-winner');
+      if (d.status === 'ended' && d.winner) {
+        winEl.classList.remove('hidden');
+        $('public-winner-text').textContent = d.winner === 'village' ? '🏆 VILLAGE WINS' : '🐺 WEREWOLVES WIN';
+        winEl.style.background = d.winner === 'village' ? 'linear-gradient(135deg,#14532d,#166534)' : 'linear-gradient(135deg,#450a0a,#7f1d1d)';
+      } else winEl.classList.add('hidden');
+    }
+
+    /* ---------- dramatic reel ---------- */
+    function enqueueReveal(rv, d) {
+      const pool = Object.values(playersOf(d)).map(p => p.name);
+      (rv.entries || []).filter(Boolean).forEach(e => revealQueue.push({ label: rv.label || 'REVEAL', entry: e, pool }));
+      runReveal();
+    }
+    async function runReveal() {
+      if (revealRunning) return;
+      revealRunning = true;
+      $('public-reveal').classList.remove('hidden');
+      while (revealQueue.length) await playReel(revealQueue.shift());
+      $('public-reveal').classList.add('hidden');
+      revealRunning = false;
+    }
+    function playReel({ label, entry, pool }) {
+      return new Promise(resolve => {
+        const reel = $('reveal-reel'), drum = $('reveal-drum');
+        $('reveal-label').textContent = label;
+        drum.textContent = 'Rolling...'; drum.className = 'reveal-drum';
+        const base = pool.length ? pool : [entry.name];
+        const rounds = Math.max(3, Math.ceil(26 / base.length));
+        let items = [];
+        for (let i = 0; i < rounds; i++) items = items.concat(shuffle(base));
+        items.push(entry.name);
+        reel.innerHTML = items.map(nm => `<div class="reveal-item">${esc(nm)}</div>`).join('');
+        reel.style.transition = 'none';
+        reel.style.transform = 'translateY(0)';
+        void reel.offsetHeight;
+        reel.style.transition = 'transform 4.4s cubic-bezier(.12,.6,.1,1)';
+        reel.style.transform = `translateY(${-(items.length - 1) * 72}px)`;
+        const def = ROLE_DEFS[entry.role] || { name: entry.role, icon: '', team: 'Village' };
+        setTimeout(() => {
+          const fin = reel.lastElementChild;
+          fin.classList.add('final', def.team === 'Werewolf' ? 'role-wolf' : 'role-village');
+          drum.textContent = `${def.icon} ${def.name}`;
+          drum.className = 'reveal-drum role';
+        }, 4500);
+        setTimeout(resolve, REVEAL_STEP_MS - 100);
+      });
+    }
+
+    /* ============================================================
+       BOOT
+       ============================================================ */
+    (async function boot() {
+      mountScene($('home-scene')); setScene($('home-scene'), 'night', '');
+      mountScene($('host-scene')); mountScene($('public-scene'));
+
+      const params = new URLSearchParams(location.search);
+      const room = params.get('room');
+      const publicCode = params.get('public');
+
+      if (publicCode) {
+        if (!checkFirebase()) return;
+        startPublic(publicCode.toUpperCase());
+        return;
+      }
+      if (room) {
+        document.querySelector('.tab[data-tab="join"]').click();
+        $('join-code').value = room.toUpperCase();
+      }
+      if (!db) return;
+
+      try {
+        const sess = load('ww_player');
+        if (sess && (!room || room.toUpperCase() === sess.room)) {
+          const s = await db.ref('rooms/' + sess.room).once('value');
+          if (s.exists() && (s.val().players || {})[sess.pid]) { enterPlayer(sess.room, sess.pid, sess.name); return; }
+          store('ww_player', null);
+        }
+        const hostCode = load('ww_host');
+        if (hostCode && !room) {
+          const s = await db.ref('rooms/' + hostCode).once('value');
+          if (s.exists()) { startHost(hostCode); return; }
+          store('ww_host', null);
+        }
+      } catch (e) { console.warn('resume failed', e); }
+    })();
+  </script>
+</body>
+</html>
