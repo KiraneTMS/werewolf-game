@@ -629,6 +629,76 @@
     }
     .action-panel-header h3 { font-size: 1.15rem; }
 
+    /* ================== TOAST NOTIFICATIONS ================== */
+    .toast-stack {
+      position: fixed;
+      top: 64px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 80;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      width: min(92vw, 380px);
+      pointer-events: none;
+    }
+    .toast {
+      pointer-events: auto;
+      background: rgba(18,18,28,0.96);
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      padding: 14px 16px;
+      box-shadow: 0 12px 36px rgba(0,0,0,0.55);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      animation: toastIn 0.35s cubic-bezier(.2,.8,.2,1);
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+    }
+    .toast.out { animation: toastOut 0.28s ease forwards; }
+    .toast .toast-icon { font-size: 1.5rem; line-height: 1; flex-shrink: 0; }
+    .toast .toast-body { flex: 1; min-width: 0; }
+    .toast .toast-title {
+      font-weight: 700;
+      font-size: 0.95rem;
+      margin-bottom: 2px;
+    }
+    .toast .toast-msg {
+      font-size: 0.85rem;
+      color: var(--muted);
+      line-height: 1.4;
+      white-space: pre-wrap;
+    }
+    .toast.death { border-color: rgba(239,68,68,0.55); background: rgba(40,12,12,0.96); }
+    .toast.death .toast-title { color: #fca5a5; }
+    .toast.phase { border-color: rgba(139,92,246,0.5); }
+    .toast.phase .toast-title { color: #c4b5fd; }
+    .toast.vote { border-color: rgba(245,158,11,0.55); }
+    .toast.vote .toast-title { color: #fcd34d; }
+    .toast.win { border-color: rgba(34,197,94,0.55); }
+    .toast.win .toast-title { color: #86efac; }
+    .toast.lose { border-color: rgba(239,68,68,0.55); }
+    .toast.lose .toast-title { color: #fca5a5; }
+    .toast.action { border-color: rgba(167,139,250,0.55); }
+    .toast.action .toast-title { color: #ddd6fe; }
+    .toast .toast-x {
+      background: transparent;
+      border: none;
+      color: var(--muted);
+      font-size: 1.1rem;
+      cursor: pointer;
+      padding: 0 2px;
+      line-height: 1;
+    }
+    @keyframes toastIn {
+      from { opacity: 0; transform: translateY(-16px) scale(0.96); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes toastOut {
+      to { opacity: 0; transform: translateY(-10px) scale(0.96); }
+    }
+
     /* ================== STATUS / PAUSE DRAWER ================== */
     /* ================== STATUS / PAUSE DRAWER ================== */
     .status-fab { display: none; } /* replaced by hud-pause-btn */
@@ -922,6 +992,8 @@
         <div class="row">
           <button class="btn btn-sm btn-success" id="btn-win-village">Village Wins</button>
           <button class="btn btn-sm btn-danger" id="btn-win-wolves">Werewolves Win</button>
+          <button class="btn btn-sm btn-secondary" id="btn-win-lonewolf">Lone Wolf Wins</button>
+          <button class="btn btn-sm btn-secondary" id="btn-win-joker">Joker Wins</button>
         </div>
       </details>
     </div>
@@ -1004,6 +1076,9 @@
         <span class="chat-badge"></span>
       </button>
     </div>
+
+    <!-- Toast notifications -->
+    <div class="toast-stack" id="toast-stack"></div>
 
     <!-- ACTION MENU (slides from right) -->
     <div class="action-drawer" id="action-drawer">
@@ -1121,7 +1196,7 @@
 
   <!-- ================= GAME RULES (pure functions) ================= -->
   <script id="game-logic">
-    const ROLE_ORDER = ['werewolf', 'seer', 'guardian', 'hunter', 'villager'];
+    const ROLE_ORDER = ['werewolf', 'lonewolf', 'seer', 'guardian', 'hunter', 'joker', 'villager'];
 
     const ROLE_DEFS = {
       villager: { name: "Villager", icon: "🧑‍🌾", team: "Village",
@@ -1138,7 +1213,13 @@
         mapIcon: "🛡️" },
       hunter:   { name: "Hunter", icon: "🏹", team: "Village", act: "hunter",
         desc: "You carry one bullet. Shoot anyone on any night — or, if you die with the bullet unused, take a last shot. You are not a werewolf, so aim carefully.",
-        mapIcon: "🏹" }
+        mapIcon: "🏹" },
+      lonewolf: { name: "Lone Wolf", icon: "🐺🌑", team: "Lone Wolf", act: "lonewolf",
+        desc: "You hunt alone. Each night you may kill anyone — including other werewolves. You win alone when every other werewolf is dead.",
+        mapIcon: "🌑" },
+      joker:    { name: "Joker", icon: "🃏", team: "Joker",
+        desc: "Chaos agent. No night power. If the village votes you out, you win instantly. Dying at night does not count.",
+        mapIcon: "🃏" }
     };
 
     const REVEAL_STEP_MS = 7000;
@@ -1149,6 +1230,29 @@
     function roleOf(d, id) { const p = playersOf(d)[id]; return p ? p.role : null; }
     function nameOf(d, id) { const p = playersOf(d)[id]; return p ? p.name : 'Someone'; }
     function isWolf(d, id) { return roleOf(d, id) === 'werewolf'; }
+    function isLoneWolf(d, id) { return roleOf(d, id) === 'lonewolf'; }
+    function isJoker(d, id) { return roleOf(d, id) === 'joker'; }
+    function winLabel(w) {
+      if (w === 'village') return '🏆 Village wins';
+      if (w === 'werewolf') return '🐺 Werewolves win';
+      if (w === 'lonewolf') return '🌑 Lone Wolf wins';
+      if (w === 'joker') return '🃏 Joker wins';
+      return 'Game ended';
+    }
+    function winBanner(w) {
+      if (w === 'village') return '🏆 VILLAGE WINS';
+      if (w === 'werewolf') return '🐺 WEREWOLVES WIN';
+      if (w === 'lonewolf') return '🌑 LONE WOLF WINS';
+      if (w === 'joker') return '🃏 JOKER WINS';
+      return 'GAME ENDED';
+    }
+    function winMsg(w) {
+      if (w === 'village') return 'The Village eliminated all werewolves.';
+      if (w === 'werewolf') return 'The Werewolves overran the village.';
+      if (w === 'lonewolf') return 'All other werewolves are dead. The Lone Wolf claims victory alone.';
+      if (w === 'joker') return 'The Joker was voted out — chaos wins!';
+      return 'The game has ended.';
+    }
     function bulletsOf(d, id) { return Number(((d && d.bullets) || {})[id]) || 0; }
     function actOf(d, key, id) { return (((d && d.actions) || {})[key] || {})[id]; }
     function shuffle(arr) {
@@ -1171,13 +1275,20 @@
     }
 
     function winnerFor(aliveMap, d) {
-      let wolves = 0, others = 0;
+      let wolves = 0, village = 0, lone = 0, jokers = 0;
       Object.keys(playersOf(d)).forEach(id => {
         if (!aliveMap[id]) return;
-        if (isWolf(d, id)) wolves++; else others++;
+        const r = roleOf(d, id);
+        if (r === 'werewolf') wolves++;
+        else if (r === 'lonewolf') lone++;
+        else if (r === 'joker') jokers++;
+        else village++;
       });
-      if (wolves === 0) return 'village';
-      if (wolves >= others) return 'werewolf';
+      // Lone Wolf solo win when every regular werewolf is dead
+      if (wolves === 0 && lone > 0) return 'lonewolf';
+      if (wolves === 0 && lone === 0) return 'village';
+      // Pack needs majority vs all non-wolves
+      if (wolves >= village + lone + jokers) return 'werewolf';
       return null;
     }
     function currentWinner(d) {
@@ -1202,6 +1313,7 @@
       const role = roleOf(d, id);
       const alive = aliveIds(d);
       if (role === 'werewolf') return alive.filter(x => !isWolf(d, x));
+      if (role === 'lonewolf') return alive.filter(x => x !== id);
       if (role === 'seer') return alive.filter(x => x !== id);
       if (role === 'guardian') return alive.filter(x => x !== ((d.guardianLast || {})[id]));
       if (role === 'hunter') return alive.filter(x => x !== id);
@@ -1225,6 +1337,23 @@
 
     function conclude(S, afterPhase, label) {
       const d = S.d;
+      // Joker wins only if eliminated by village vote (not night / hunter)
+      const votedOut = (label || '').indexOf('ELIMINATED') >= 0 && afterPhase === 'elimination';
+      if (votedOut) {
+        const jokerHit = S.newDead.find(id => isJoker(d, id));
+        if (jokerHit) {
+          if (S.entries.length) S.upd.reveal = { seq: Date.now(), label: label || 'ELIMINATED', entries: S.entries };
+          S.upd.status = 'ended';
+          S.upd.phase = 'ended';
+          S.upd.winner = 'joker';
+          S.upd.hunterPending = null;
+          S.upd.hunterQueue = null;
+          S.ann.push('', '🃏 JOKER WINS!\n' + nameOf(d, jokerHit) + ' was voted out — chaos claims victory!');
+          S.upd.publicAnnouncement = S.ann.join('\n');
+          return S;
+        }
+      }
+
       const winner = winnerFor(S.alive, d);
       S.newDead.forEach(id => {
         if (roleOf(d, id) === 'hunter' && (S.bul[id] || 0) > 0 && !S.queue.includes(id)) S.queue.push(id);
@@ -1237,9 +1366,11 @@
         S.upd.winner = winner;
         S.upd.hunterPending = null;
         S.upd.hunterQueue = null;
-        S.ann.push('', winner === 'village'
-          ? '🏆 VILLAGE WINS!\nAll werewolves have been eliminated.'
-          : '🐺 WEREWOLVES WIN!\nThe wolves have taken over the village.');
+        if (winner === 'village') S.ann.push('', '🏆 VILLAGE WINS!\nAll werewolves have been eliminated.');
+        else if (winner === 'werewolf') S.ann.push('', '🐺 WEREWOLVES WIN!\nThe wolves have taken over the village.');
+        else if (winner === 'lonewolf') S.ann.push('', '🌑 LONE WOLF WINS!\nEvery other werewolf is dead — the Lone Wolf stands alone.');
+        else if (winner === 'joker') S.ann.push('', '🃏 JOKER WINS!');
+        else S.ann.push('', winBanner(winner));
       } else if (S.queue.length) {
         S.upd.phase = 'hunter';
         S.upd.hunterPending = S.queue[0];
@@ -1302,6 +1433,15 @@
           S.host.push(`🏹 ${nameOf(d, hid)} (Hunter) shot ${nameOf(d, t)}`);
         } else {
           S.host.push(`🏹 ${nameOf(d, hid)} (Hunter) held fire`);
+        }
+      });
+      aliveIds(d).filter(id => roleOf(d, id) === 'lonewolf').forEach(lid => {
+        const t = (act.lonewolf || {})[lid];
+        if (t && t !== 'hold' && S.alive[t] && t !== lid) {
+          attacks.push({ victim: t, by: 'lonewolf', attacker: lid });
+          S.host.push(`🌑 ${nameOf(d, lid)} (Lone Wolf) attacked ${nameOf(d, t)}`);
+        } else {
+          S.host.push(`🌑 ${nameOf(d, lid)} (Lone Wolf) held back`);
         }
       });
       attacks.forEach(a => {
@@ -1542,7 +1682,7 @@
     }
     function sceneTimeFor(d) {
       const ph = d.phase || 'lobby';
-      if (ph === 'ended') return d.winner === 'werewolf' ? 'blood' : 'day';
+      if (ph === 'ended') return (d.winner === 'werewolf' || d.winner === 'lonewolf') ? 'blood' : 'day';
       if (ph === 'night') return 'night';
       if (ph === 'voting' || ph === 'elimination' || ph === 'hunter') return 'dusk';
       return 'day';
@@ -1555,7 +1695,7 @@
         case 'voting': return `🗳️ Day ${n} · Voting`;
         case 'elimination': return `⚖️ Day ${n} · Verdict`;
         case 'hunter': return '🏹 The Hunter takes a shot';
-        case 'ended': return d.winner === 'village' ? '🏆 Village wins' : '🐺 Werewolves win';
+        case 'ended': return winLabel(d.winner);
         default: return '🏡 Waiting for players';
       }
     }
@@ -1870,10 +2010,14 @@
       }
     }
     function handleSnapshot(d, render) {
+      const before = prevData;
       latestData = d;
       currentRender = render;
       trackReveal(d);
       render(d);
+      if (!isHost && !isPublic && currentPlayerId) {
+        try { playerNotifs(d, before); } catch (e) { console.warn(e); }
+      }
       prevData = d;
     }
 
@@ -1978,6 +2122,7 @@
       step('seer', 'Choose someone to investigate.');
       step('guardian', 'Choose someone to protect tonight.');
       step('hunter', 'Fire your bullet at someone — or hold fire.');
+      step('lonewolf', 'Lone Wolf chooses a kill (can target werewolves) — or holds.');
       lines.push('Everyone, open your eyes when the Narrator resolves the night.');
       return lines.join('\n');
     }
@@ -1989,7 +2134,7 @@
         case 'voting': return 'Voting is open. Every living player picks someone to eliminate (or skips) on their phone.\nThe result is revealed when you close the vote.';
         case 'elimination': return (d.publicAnnouncement || '') + '\n\n— Read the verdict aloud, then send the village to sleep.';
         case 'hunter': return `${nameOf(d, d.hunterPending)} is the Hunter and is choosing a last shot on their phone.`;
-        case 'ended': return d.winner === 'village' ? '🏆 VILLAGE WINS' : (d.winner === 'werewolf' ? '🐺 WEREWOLVES WIN' : 'Game ended');
+        case 'ended': return winBanner(d.winner);
         default: return 'Choose a phase.';
       }
     }
@@ -2238,6 +2383,8 @@
     }
     $('btn-win-village').addEventListener('click', () => declareWinner('village'));
     $('btn-win-wolves').addEventListener('click', () => declareWinner('werewolf'));
+    const btnLW = $('btn-win-lonewolf'); if (btnLW) btnLW.addEventListener('click', () => declareWinner('lonewolf'));
+    const btnJK = $('btn-win-joker'); if (btnJK) btnJK.addEventListener('click', () => declareWinner('joker'));
     $('btn-copy').addEventListener('click', () => {
       const url = location.href.split('?')[0] + '?room=' + currentRoom;
       navigator.clipboard.writeText(url).then(() => alert("Invite link copied!\n" + url)).catch(() => prompt("Copy:", url));
@@ -2419,10 +2566,13 @@
       if (d.status === 'ended' || d.phase === 'ended') {
         $('player-role-section').classList.add('hidden');
         $('player-end').classList.remove('hidden');
-        const won = d.winner === (def.team === 'Werewolf' ? 'werewolf' : 'village');
-        $('end-team').textContent = def.icon + ' ' + def.name + ' · ' + def.team + ' Team';
-        $('end-title').textContent = won ? 'YOU WIN!' : 'YOU LOSE';
-        $('end-msg').textContent = d.winner === 'village' ? 'The Village eliminated all werewolves.' : 'The Werewolves overran the village.';
+        const won =
+          (def.team === 'Werewolf' && d.winner === 'werewolf') ||
+          (def.team === 'Village' && d.winner === 'village') ||
+          (def.team === 'Lone Wolf' && d.winner === 'lonewolf') ||
+          (def.team === 'Joker' && d.winner === 'joker');
+        $('end-title').textContent = won ? 'You win!' : 'You lose';
+        $('end-msg').textContent = winMsg(d.winner)
         const box = $('end-box');
         box.style.background = won ? 'linear-gradient(135deg, #14532d, #166534)' : 'linear-gradient(135deg, #450a0a, #7f1d1d)';
         box.style.borderColor = won ? '#22c55e' : '#ef4444';
@@ -2482,10 +2632,12 @@
         werewolf: ['🐺 Choose your victim', 'The pack votes — most votes wins, ties are random. You can change your pick until the Narrator resolves the night.'],
         seer: ['🔮 Investigate someone', 'You will learn whether they are a Werewolf when morning comes.'],
         guardian: ['🛡️ Protect someone', 'They survive any night attack. You may pick yourself.'],
-        hunter: ['🏹 Fire your bullet?', 'You have one bullet for the whole game. Shoot someone tonight — or hold fire.']
+        hunter: ['🏹 Fire your bullet?', 'You have one bullet for the whole game. Shoot someone tonight — or hold fire.'],
+        lonewolf: ['🌑 Choose your kill', 'You hunt alone. You may kill anyone — including werewolves. Or hold back for tonight.']
       };
-      $('action-title').textContent = titles[role][0];
-      let hint = titles[role][1];
+      const pair = titles[role] || [def.name, def.desc];
+      $('action-title').textContent = pair[0];
+      let hint = pair[1];
       if (role === 'guardian' && (d.guardianLast || {})[currentPlayerId]) hint += ` You can't pick ${nameOf(d, d.guardianLast[currentPlayerId])} again — you shielded them last night.`;
       $('action-hint').textContent = hint;
 
@@ -2500,7 +2652,7 @@
       $('action-done').classList.toggle('hidden', !locked);
       $('btn-change-action').classList.toggle('hidden', !locked);
       ['target-list', 'btn-submit-action'].forEach(id => $(id).classList.toggle('hidden', !!locked));
-      $('btn-hold-fire').classList.toggle('hidden', !(role === 'hunter' && !locked));
+      $('btn-hold-fire').classList.toggle('hidden', !((role === 'hunter' || role === 'lonewolf') && !locked));
       if (locked) {
         $('action-done').textContent = mine === 'hold' ? 'You are holding fire tonight ✓' : 'Locked in: ' + nameOf(d, mine) + ' ✓';
       } else {
@@ -2523,7 +2675,9 @@
     });
     $('btn-hold-fire').addEventListener('click', async () => {
       editingAction = false;
-      await writeAction(`actions/hunter/${currentPlayerId}`, 'hold');
+      const def = ROLE_DEFS[shownRole] || ROLE_DEFS[roleOf(roomData, currentPlayerId)];
+      const act = (def && def.act) || 'hunter';
+      await writeAction(`actions/${act}/${currentPlayerId}`, 'hold');
     });
     $('btn-change-action').addEventListener('click', () => { editingAction = true; delete $('target-list').dataset.sig; selectedTarget = null; if (latestData) updatePlayerUI(latestData); });
     $('btn-submit-vote').addEventListener('click', async () => {
@@ -2543,17 +2697,146 @@
     /* ============================================================
        STATUS DRAWER
        ============================================================ */
+    /* ============================================================
+       TOAST NOTIFICATIONS
+       ============================================================ */
+    let notifKey = '';
+    function ensureToastStack() {
+      let s = $('toast-stack');
+      if (!s) {
+        s = document.createElement('div');
+        s.id = 'toast-stack';
+        s.className = 'toast-stack';
+        document.body.appendChild(s);
+      }
+      return s;
+    }
+    function pushToast({ icon, title, msg, kind, duration }) {
+      const stack = ensureToastStack();
+      const el = document.createElement('div');
+      el.className = 'toast' + (kind ? ' ' + kind : '');
+      el.innerHTML = `<div class="toast-icon">${icon || 'ℹ️'}</div>
+        <div class="toast-body"><div class="toast-title">${esc(title || '')}</div>
+        <div class="toast-msg">${esc(msg || '')}</div></div>
+        <button class="toast-x" type="button" aria-label="Dismiss">×</button>`;
+      const dismiss = () => {
+        el.classList.add('out');
+        setTimeout(() => el.remove(), 280);
+      };
+      el.querySelector('.toast-x').addEventListener('click', dismiss);
+      stack.appendChild(el);
+      const ms = duration == null ? 5500 : duration;
+      if (ms > 0) setTimeout(dismiss, ms);
+      return el;
+    }
+
+    function playerNotifs(d, prev) {
+      if (!prev || !d) return;
+      const phase = d.phase || '';
+      const prevPhase = prev.phase || '';
+      const n = d.nightNumber || 0;
+      const meAlive = currentPlayerId && isAlive(d, currentPlayerId);
+      const wasAlive = currentPlayerId && isAlive(prev, currentPlayerId);
+
+      // Phase transitions
+      if (phase !== prevPhase) {
+        if (phase === 'night') {
+          pushToast({ icon: '🌙', title: `Night ${n}`, msg: 'The village goes to sleep. Keep your eyes closed.', kind: 'phase' });
+        } else if (phase === 'day') {
+          pushToast({ icon: '☀️', title: `Morning — Day ${n}`, msg: d.publicAnnouncement || 'Discuss and find the werewolves.', kind: 'phase', duration: 7000 });
+        } else if (phase === 'voting') {
+          pushToast({ icon: '🗳️', title: 'Voting is open', msg: meAlive ? 'Open Actions to cast your vote.' : 'You are dead — watch the vote.', kind: 'vote' });
+        } else if (phase === 'elimination') {
+          pushToast({ icon: '⚖️', title: 'Verdict', msg: d.publicAnnouncement || 'The village has spoken.', kind: 'phase', duration: 7000 });
+        } else if (phase === 'hunter') {
+          const hid = d.hunterPending;
+          const isMe = hid === currentPlayerId;
+          pushToast({
+            icon: '🏹',
+            title: isMe ? 'Your last shot!' : 'Hunter takes a shot',
+            msg: isMe ? 'Open Actions and choose a target — or hold fire.' : `${nameOf(d, hid)} is choosing a last shot...`,
+            kind: 'action',
+            duration: 6500
+          });
+        } else if (phase === 'ended') {
+          const wonTeam = d.winner;
+          const me = playersOf(d)[currentPlayerId];
+          const myTeam = me && ROLE_DEFS[me.role] ? ROLE_DEFS[me.role].team : '';
+          const won = (wonTeam === 'village' && myTeam === 'Village') || (wonTeam === 'werewolf' && myTeam === 'Werewolf');
+          pushToast({
+            icon: won ? '🏆' : '💀',
+            title: won ? 'You win!' : 'You lose',
+            msg: wonTeam === 'village' ? 'The Village eliminated all werewolves.' : 'The Werewolves overran the village.',
+            kind: won ? 'win' : 'lose',
+            duration: 9000
+          });
+        }
+      }
+
+      // Deaths: compare alive maps
+      const prevAlive = prev.alive || {};
+      const curAlive = d.alive || {};
+      const ids = Object.keys(playersOf(d));
+      const newlyDead = ids.filter(id => prevAlive[id] !== false && curAlive[id] === false);
+      newlyDead.forEach(id => {
+        const role = roleOf(d, id);
+        const def = ROLE_DEFS[role] || { name: role || 'Unknown', icon: '💀' };
+        const isMe = id === currentPlayerId;
+        let reason = 'Eliminated.';
+        if (prevPhase === 'night' || (phase === 'day' && prevPhase === 'night')) {
+          reason = 'Found dead this morning — killed during the night.';
+        } else if (prevPhase === 'voting' || phase === 'elimination') {
+          reason = 'Voted out by the village.';
+        } else if (prevPhase === 'hunter' || phase === 'hunter') {
+          reason = 'Taken down by the Hunter’s last shot.';
+        }
+        // Prefer announcement line if it mentions them
+        const ann = d.publicAnnouncement || '';
+        if (ann.includes(nameOf(d, id))) {
+          // keep generic reason above
+        }
+        pushToast({
+          icon: isMe ? '💀' : def.icon || '💀',
+          title: isMe ? 'You have died' : `${nameOf(d, id)} has died`,
+          msg: isMe
+            ? `${reason}\nYou were the ${def.icon} ${def.name}.`
+            : `${reason}\nRole revealed: ${def.icon} ${def.name}.`,
+          kind: 'death',
+          duration: 8000
+        });
+      });
+
+      // Duty: night action available
+      if (phase === 'night' && meAlive && requiredActors(d).includes(currentPlayerId)) {
+        const mine = actOf(d, ROLE_DEFS[roleOf(d, currentPlayerId)].act, currentPlayerId);
+        if (!mine && (prevPhase !== 'night' || !requiredActors(prev).includes(currentPlayerId))) {
+          const role = roleOf(d, currentPlayerId);
+          const def = ROLE_DEFS[role];
+          pushToast({
+            icon: def.icon,
+            title: `${def.name} — your turn`,
+            msg: 'Open Actions to perform your night ability.',
+            kind: 'action',
+            duration: 5000
+          });
+        }
+      }
+    }
+
     let lastDutyCtx = '';
     function updateActionDuty(on) {
       const btn = $('btn-action-menu');
       if (!btn) return;
       btn.classList.toggle('has-duty', !!on);
-      // Soft-open the action menu when a new duty appears
+      // Auto-open action menu once per new duty context (vote / night / hunter)
       if (on && pickCtx && pickCtx !== lastDutyCtx) {
         lastDutyCtx = pickCtx;
         openAction();
       }
-      if (!on) lastDutyCtx = pickCtx || lastDutyCtx;
+      // Only clear the "already opened" marker when duty is gone AND context changed
+      if (!on && pickCtx && pickCtx !== lastDutyCtx) {
+        lastDutyCtx = '';
+      }
     }
     function openStatus() { $('status-drawer')?.classList.add('open'); }
     function closeStatus() { $('status-drawer')?.classList.remove('open'); }
@@ -2710,7 +2993,7 @@
         voting: `🗳️ Voting — Day ${d.nightNumber || ''}`,
         elimination: `⚖️ Verdict — Day ${d.nightNumber || ''}`,
         hunter: '🏹 The Hunter takes a last shot',
-        ended: d.winner === 'village' ? '🏆 VILLAGE WINS' : '🐺 WEREWOLVES WIN'
+        ended: winBanner(d.winner)
       };
       $('public-phase').textContent = labels[phase] || phase;
 
@@ -2741,8 +3024,11 @@
       const winEl = $('public-winner');
       if (d.status === 'ended' && d.winner) {
         winEl.classList.remove('hidden');
-        $('public-winner-text').textContent = d.winner === 'village' ? '🏆 VILLAGE WINS' : '🐺 WEREWOLVES WIN';
-        winEl.style.background = d.winner === 'village' ? 'linear-gradient(135deg,#14532d,#166534)' : 'linear-gradient(135deg,#450a0a,#7f1d1d)';
+        $('public-winner-text').textContent = winBanner(d.winner);
+        winEl.style.background = d.winner === 'village' ? 'linear-gradient(135deg,#14532d,#166534)'
+          : d.winner === 'lonewolf' ? 'linear-gradient(135deg,#1e1b4b,#312e81)'
+          : d.winner === 'joker' ? 'linear-gradient(135deg,#4a044e,#86198f)'
+          : 'linear-gradient(135deg,#450a0a,#7f1d1d)';
       } else winEl.classList.add('hidden');
     }
 
