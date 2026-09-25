@@ -1594,15 +1594,24 @@
     let busy = false, nextFn = null, endingRoom = false;
     let chatRef = null, lastChatSeen = 0, chatOpen = false;
 
-    function storeFor(key) { return key === 'ww_host' ? 'localStorage' : 'sessionStorage'; }
+    // localStorage so refresh / new tab can resume the same seat
     function store(key, val) {
       try {
-        const st = window[storeFor(key)];
-        if (val == null) st.removeItem(key); else st.setItem(key, JSON.stringify(val));
+        if (val == null) localStorage.removeItem(key);
+        else localStorage.setItem(key, JSON.stringify(val));
+        // migrate: clear old sessionStorage copies
+        try { sessionStorage.removeItem(key); } catch (e) {}
       } catch (e) {}
     }
     function load(key) {
-      try { return JSON.parse(window[storeFor(key)].getItem(key)); } catch (e) { return null; }
+      try {
+        const raw = localStorage.getItem(key) || sessionStorage.getItem(key);
+        return raw ? JSON.parse(raw) : null;
+      } catch (e) { return null; }
+    }
+    function clearSession() {
+      store('ww_player', null);
+      store('ww_host', null);
     }
 
     /* ============================================================
@@ -2412,43 +2421,53 @@
       try { snap = await ref.once('value'); } catch (e) { alert("Cannot read room: " + e.message); return; }
       if (!snap.exists()) { alert("Room not found."); return; }
       const data = snap.val();
-      const existing = Object.entries(data.players || {}).find(([, p]) => p.name.toLowerCase() === name.toLowerCase());
+      const players = data.players || {};
+      const saved = load('ww_player');
 
-      if (data.status === 'lobby') {
-        if (existing) {
-          const saved = load('ww_player');
-          const mine = saved && saved.room === code && saved.pid === existing[0];
-          if (mine || confirm(`"${existing[1].name}" has already joined this room.\n\nOK = that's me, take me back to my seat.\nCancel = I'm someone else (pick a different name).`)) {
-            enterPlayer(code, existing[0], name);
-          }
-          return;
-        }
-        let roleToGive = null;
-        let res;
-        try {
-          res = await ref.child('remaining').transaction(cur => {
-            if (cur === null) return cur;
-            const candidates = [];
-            Object.entries(cur).forEach(([r, c]) => { for (let i = 0; i < c; i++) candidates.push(r); });
-            if (!candidates.length) { roleToGive = null; return; }
-            roleToGive = candidates[Math.floor(Math.random() * candidates.length)];
-            const next = { ...cur };
-            next[roleToGive] = (next[roleToGive] || 0) - 1;
-            if (next[roleToGive] <= 0) delete next[roleToGive];
-            return Object.keys(next).length ? next : null;
-          });
-        } catch (err) { alert("Claim failed: " + (err.message || err)); return; }
-        if (!res.committed || !roleToGive) { alert("All roles claimed!"); return; }
-
-        const pid = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
-        try {
-          await ref.child('players/' + pid).set({ name, role: roleToGive, claimedAt: Date.now() });
-        } catch (err) { alert("Claim failed: " + (err.message || err)); return; }
-        enterPlayer(code, pid, name);
-      } else {
-        if (!existing) { alert("Game already started and your name was not found. Ask the Narrator."); return; }
-        enterPlayer(code, existing[0], name);
+      // 1) Resume by saved player id (refresh / return) — does not take a new seat
+      if (saved && saved.room === code && players[saved.pid]) {
+        enterPlayer(code, saved.pid, players[saved.pid].name || name);
+        return;
       }
+
+      // 2) Resume by same name (case-insensitive) — reclaim seat, not a new claim
+      const existing = Object.entries(players).find(([, p]) => (p.name || '').toLowerCase() === name.toLowerCase());
+      if (existing) {
+        enterPlayer(code, existing[0], existing[1].name || name);
+        return;
+      }
+
+      // 3) New join only in lobby while roles remain
+      if (data.status !== 'lobby') {
+        alert("Game already started and no seat matches your name.\nUse the exact name you joined with, or ask the Narrator.");
+        return;
+      }
+
+      let roleToGive = null;
+      let res;
+      try {
+        res = await ref.child('remaining').transaction(cur => {
+          if (cur === null) return cur;
+          const candidates = [];
+          Object.entries(cur).forEach(([r, c]) => { for (let i = 0; i < (Number(c) || 0); i++) candidates.push(r); });
+          if (!candidates.length) { roleToGive = null; return; }
+          roleToGive = candidates[Math.floor(Math.random() * candidates.length)];
+          const next = { ...cur };
+          next[roleToGive] = (next[roleToGive] || 0) - 1;
+          if (next[roleToGive] <= 0) delete next[roleToGive];
+          return Object.keys(next).length ? next : null;
+        });
+      } catch (err) { alert("Claim failed: " + (err.message || err)); return; }
+      if (!res.committed || !roleToGive) {
+        alert("Room is full — all roles are claimed.\nIf you were already in this game, type your exact name to rejoin your seat.");
+        return;
+      }
+
+      const pid = 'p_' + Date.now() + '_' + Math.random().toString(36).slice(2, 7);
+      try {
+        await ref.child('players/' + pid).set({ name, role: roleToGive, claimedAt: Date.now() });
+      } catch (err) { alert("Claim failed: " + (err.message || err)); return; }
+      enterPlayer(code, pid, name);
     });
 
     function enterPlayer(code, pid, name) {
@@ -3093,14 +3112,34 @@
         document.querySelector('.tab[data-tab="join"]').click();
         $('join-code').value = room.toUpperCase();
       }
+      // Prefill last used player name / room
+      try {
+        const prev = load('ww_player');
+        if (prev) {
+          if (!room && prev.room) $('join-code').value = prev.room;
+          if (prev.name) $('join-name').value = prev.name;
+        }
+      } catch (e) {}
+
       if (!db) return;
 
       try {
         const sess = load('ww_player');
-        if (sess && (!room || room.toUpperCase() === sess.room)) {
-          const s = await db.ref('rooms/' + sess.room).once('value');
-          if (s.exists() && (s.val().players || {})[sess.pid]) { enterPlayer(sess.room, sess.pid, sess.name); return; }
-          store('ww_player', null);
+        if (sess && sess.room && sess.pid) {
+          // Prefer URL room if present; only resume if same room
+          if (!room || room.toUpperCase() === String(sess.room).toUpperCase()) {
+            const s = await db.ref('rooms/' + sess.room).once('value');
+            if (s.exists()) {
+              const d = s.val() || {};
+              const p = (d.players || {})[sess.pid];
+              if (p) {
+                enterPlayer(sess.room, sess.pid, p.name || sess.name || '');
+                return;
+              }
+            }
+            // Seat gone — clear stale session so user can join cleanly
+            store('ww_player', null);
+          }
         }
         const hostCode = load('ww_host');
         if (hostCode && !room) {
