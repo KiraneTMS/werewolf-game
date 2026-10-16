@@ -1230,41 +1230,87 @@ $('btn-join').addEventListener('click', async () => {
   if (!name) return alert('Enter your name');
   const ref = db.ref('poker/' + code);
   let snap;
-  try { snap = await ref.once('value'); } catch (e) { alert(e.message); return; }
-  if (!snap.exists()) return alert('Table not found');
+  try { snap = await ref.once('value'); } catch (e) { alert('Cannot read table: ' + e.message); return; }
+  if (!snap.exists()) return alert('Table not found. Check the code.');
   const d = snap.val();
   const pl = d.players || {};
 
+  // 1) Resume this device's saved seat (any status)
   const saved = load('poker_sess');
   if (saved && saved.room === code && pl[saved.pid]) {
-    enter(code, saved.pid, d.hostId === saved.pid);
+    enter(code, saved.pid, d.hostId === saved.pid, pl[saved.pid].name || name);
     return;
   }
+
+  // 2) Reclaim seat by same name (rejoin from phone / other browser)
   const byName = Object.entries(pl).find(([, p]) => (p.name || '').toLowerCase() === name.toLowerCase());
   if (byName) {
-    enter(code, byName[0], d.hostId === byName[0]);
+    enter(code, byName[0], d.hostId === byName[0], byName[1].name || name);
     return;
   }
-  if (d.status !== 'lobby') {
-    return alert('Hand in progress. Use the exact name you joined with to rejoin.');
+
+  // 3) New player — allowed in lobby OR mid-game (sits out until next hand)
+  if (d.status === 'ended') {
+    return alert('This table has ended. Ask the host to create a new one.');
   }
-  if (Object.keys(pl).length >= 6) return alert('Table full (6 max)');
-  const id = 'p_' + Date.now().toString(36);
+  if (Object.keys(pl).length >= 6) {
+    return alert('Table is full (6 players max).');
+  }
+
+  const id = 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
   const order = Object.keys(pl).length;
+  const inLobby = d.status === 'lobby' || !d.status;
+  const seat = {
+    name,
+    stack: d.buyIn || 1000,
+    order,
+    joinedAt: Date.now(),
+    // If a hand is already running, sit out until next deal
+    inHand: false,
+    folded: true,
+    bet: 0,
+    allIn: false,
+    acted: true
+  };
+
   try {
-    await ref.child('players/' + id).set({
-      name, stack: d.buyIn || 1000, order, joinedAt: Date.now()
+    // Transaction so two phones joining at once don't overwrite
+    const result = await ref.child('players').transaction(cur => {
+      const players = cur || {};
+      if (Object.keys(players).length >= 6) return;
+      // name taken mid-flight?
+      const taken = Object.values(players).some(p => (p.name || '').toLowerCase() === name.toLowerCase());
+      if (taken) return;
+      players[id] = seat;
+      return players;
     });
-  } catch (e) { alert(e.message); return; }
-  enter(code, id, false);
+    if (!result.committed) {
+      // Maybe someone else took the name — try reclaim
+      const again = await ref.once('value');
+      const d2 = again.val() || {};
+      const pl2 = d2.players || {};
+      const hit = Object.entries(pl2).find(([, p]) => (p.name || '').toLowerCase() === name.toLowerCase());
+      if (hit) {
+        enter(code, hit[0], d2.hostId === hit[0], hit[1].name || name);
+        return;
+      }
+      return alert('Could not join — table full or name just taken. Try again.');
+    }
+  } catch (e) {
+    return alert('Join failed: ' + (e.message || e) + '\n\nIf this is a permission error, Firebase rules must allow write to poker/.');
+  }
+
+  if (!inLobby) toast('Joined — you will play from the next hand', 'ok');
+  enter(code, id, false, name);
 });
 
-function enter(code, id, host) {
+function enter(code, id, host, displayName) {
   room = code; pid = id; isHost = !!host;
   armLeaveGuard();
-  store('poker_sess', { room: code, pid: id, name: null });
+  store('poker_sess', { room: code, pid: id, name: displayName || null });
   $('home').classList.add('hidden');
   $('game').classList.remove('hidden');
+  if (roomRef) { try { roomRef.off(); } catch (e) {} }
   roomRef = db.ref('poker/' + code);
   roomRef.on('value', snap => {
     const d = snap.val();
@@ -1275,9 +1321,18 @@ function enter(code, id, host) {
       location.href = location.href.split('?')[0];
       return;
     }
-    // refresh isHost
+    // If our seat was removed, go home
+    if (!((d.players || {})[pid])) {
+      disarmLeaveGuard();
+      store('poker_sess', null);
+      alert('You were removed from the table.');
+      location.href = location.href.split('?')[0];
+      return;
+    }
     isHost = d.hostId === pid;
     updateUI(d);
+  }, err => {
+    alert('Connection error: ' + (err && err.message ? err.message : err));
   });
 }
 
@@ -1364,19 +1419,22 @@ $('btn-raise-cancel').addEventListener('click', () => {
     $('j-code').value = r.toUpperCase();
   }
   const sess = load('poker_sess');
+  if (sess && sess.name && $('j-name')) $('j-name').value = sess.name;
   if (sess && sess.room) {
-    if (!r || r.toUpperCase() === sess.room) {
+    if (!r || r.toUpperCase() === String(sess.room).toUpperCase()) {
       try {
+        if (!db) return;
         const s = await db.ref('poker/' + sess.room).once('value');
         if (s.exists() && (s.val().players || {})[sess.pid]) {
-          enter(sess.room, sess.pid, s.val().hostId === sess.pid);
+          const p = s.val().players[sess.pid];
+          enter(sess.room, sess.pid, s.val().hostId === sess.pid, p.name || sess.name);
           return;
         }
-      } catch (e) {}
+      } catch (e) { console.warn('resume failed', e); }
+      // Stale session for this room — clear so phone can join fresh
       store('poker_sess', null);
     }
   }
-  if (sess && sess.name) $('j-name').value = sess.name;
 })();
 </script>
 </body>
